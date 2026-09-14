@@ -53,6 +53,7 @@ SKIP_TYPES = {"缓存存储"}
 MODEL_MAP = {
     "DeepSeek-V4-Flash": "DeepSeek-V4-Flash",
     "DeepSeek-V4-Pro":   "DeepSeek-V4-Pro",
+    "DeepSeek-V4.1-Flash": "DeepSeek-V4.1-Flash",
     "Qwen3.5-122B-A10B": "Qwen3.5-122B-A10B",
     "Qwen3.5-35B-A3B":   "Qwen3.5-35B-A3B",
     "Qwen3.6-Plus":      "Qwen3.6-Plus",
@@ -93,6 +94,7 @@ PRICING = {
             {"until": "2099-12-31", "input_hit": 0.10, "input_miss": 12.00, "output": 24.00},
         ],
     },
+    "DeepSeek-V4.1-Flash": {"input_hit": 0.04, "input_miss": 2.00, "output": 8.00},
     "GLM-5": {"input_hit": 1.50, "input_miss": 6.00, "output": 20.00},
     "GLM-5.3-Flash": {"input_hit": 0.115, "input_miss": 0.40, "output": 1.40},
     "Kimi-K2.5": {"input_hit": 0.80, "input_miss": 4.00, "output": 21.00},
