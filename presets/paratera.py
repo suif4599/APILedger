@@ -96,7 +96,12 @@ PRICING = {
     },
     "DeepSeek-V4.1-Flash": {"input_hit": 0.04, "input_miss": 2.00, "output": 8.00},
     "GLM-5": {"input_hit": 1.50, "input_miss": 6.00, "output": 20.00},
-    "GLM-5.3-Flash": {"input_hit": 0.115, "input_miss": 0.40, "output": 1.40},
+    "GLM-5.3-Flash": {
+        "history": [
+            {"until": "2026-09-07", "input_hit": 0.115, "input_miss": 0.40, "output": 1.40},
+            {"until": "2099-12-31", "input_hit": 0.23, "input_miss": 0.80, "output": 2.80},
+        ],
+    },
     "Kimi-K2.5": {"input_hit": 0.80, "input_miss": 4.00, "output": 21.00},
     "Qwen3.5-122B-A10B": {"input_hit": 0.20, "input_miss": 2.00, "output": 16.00},
     "Qwen3.5-35B-A3B": {"input_hit": 0.16, "input_miss": 1.60, "output": 12.80},
