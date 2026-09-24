@@ -126,6 +126,10 @@
       </div>
       <div id="chart-stack" class="chart"></div>
     </div>
+    <div class="chart-box wide">
+      <h3>各模型每日均价 <span class="hint">(每 1M Tokens 加权均价 = Σ单价×Tokens / ΣTokens，与「模型构成对比」同口径)</span></h3>
+      <div id="chart-price" class="chart"></div>
+    </div>
   </div>
 
   <!-- 明细表 -->
@@ -625,10 +629,89 @@
     }, true);
   }
 
+  // ── 各模型每日均价曲线: 每模型一条线, 逐日展开 renderStack 的均价 ──
+  // y = 当日 Σ(吸附后单价 × tokens) / Σtokens (元/1M tokens), 与「模型构成对比」
+  // 的均价同口径, 只是按日拆开; 无单价的记录 (单价 0) 分子分母都不计入, 避免
+  // 缺价被当成 0 拉低均价。同模型跨平台价格可能不同 → 该模型按 "平台 · 模型"
+  // 拆成多条线, 不混成一条; 当日该模型无记录则为空点 (线在此处断开)。
+  function renderAvgPrice() {
+    const el = document.getElementById('chart-price');
+    if (!filtered.length) { showEmpty(el, '当前筛选无数据'); return; }
+
+    // 模型 → 平台集合: 仅当该模型出现多个平台时才在标签上带平台前缀
+    const platforms = new Map();
+    for (const r of filtered) {
+      const m = r.model || '(空)';
+      if (!platforms.has(m)) platforms.set(m, new Set());
+      platforms.get(m).add(r.platform || '');
+    }
+    const labelOf = r => {
+      const m = r.model || '(空)';
+      return (platforms.get(m).size > 1 && r.platform) ? r.platform + ' · ' + m : m;
+    };
+
+    const dates = new Set();
+    const seriesMap = new Map();   // label -> Map(日期 -> {num, den})
+    for (const r of filtered) {
+      const tokens = Number(r.tokens || 0);
+      const d = String(r.bill_start).slice(0, 10);
+      const price = snapUnitPrice(r).value;
+      if (!d || !(tokens > 0) || !(price > 0)) continue;
+      const label = labelOf(r);
+      let byDate = seriesMap.get(label);
+      if (!byDate) { byDate = new Map(); seriesMap.set(label, byDate); }
+      const g = byDate.get(d) || { num: 0, den: 0 };
+      g.num += price * tokens;
+      g.den += tokens;
+      byDate.set(d, g);
+      dates.add(d);
+    }
+    if (!dates.size) { showEmpty(el, '当前筛选无可计算单价的记录'); return; }
+
+    const chart = getChart('price', el);
+    if (!chart) return;
+    const dateList = [...dates].sort();
+    // 线序按 tokens 总量降序 (与图例及其余图表口径一致)
+    const lines = [...seriesMap.entries()]
+      .map(([name, byDate]) => ({ name, byDate,
+        tokens: [...byDate.values()].reduce((s, g) => s + g.den, 0) }))
+      .sort((a, b) => b.tokens - a.tokens);
+    const fmtPrice3 = v => '¥' + Number(v).toLocaleString('zh-CN', { minimumFractionDigits: 3, maximumFractionDigits: 3 }) + '/M';
+
+    chart.setOption({
+      tooltip: {
+        trigger: 'axis',
+        formatter: params => {
+          let s = params[0].axisValue;
+          for (const p of params) {           // 当日无数据的线 (空点) 不列入
+            if (p.value == null) continue;
+            s += '<br>' + p.marker + ' ' + p.seriesName + ': ' + fmtPrice3(p.value);
+          }
+          return s;
+        },
+      },
+      legend: { bottom: 0, type: 'scroll' },
+      grid: { left: 70, right: 30, top: 20, bottom: 46 },
+      xAxis: { type: 'category', data: dateList, axisLabel: { rotate: 45, fontSize: 10 } },
+      yAxis: { type: 'value', name: '均价(¥/M)',
+               axisLabel: { fontSize: 10, formatter: v => Number(v).toFixed(3) } },
+      series: lines.map((l, i) => ({
+        name: l.name, type: 'line', smooth: true, connectNulls: false,
+        symbolSize: 6, emphasis: { focus: 'series' },
+        itemStyle: { color: CHART_COLORS[i % CHART_COLORS.length] },
+        data: dateList.map(d => {
+          const g = l.byDate.get(d);
+          return g && g.den ? +(g.num / g.den).toFixed(3) : null;
+        }),
+      })),
+    }, true);
+  }
+
   function renderCharts() {
     renderTrend();
     renderModelBar();
     renderStack();
+    renderAvgPrice();
   }
 
   // ═══════════════════════════════════════════

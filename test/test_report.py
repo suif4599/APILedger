@@ -67,14 +67,23 @@ class TestBuildHtml:
             assert f'id="{fid}"' in html
 
     def test_chart_containers_present(self, seeded_db):
-        """全部图表容器齐全 (趋势/模型双条/构成堆叠)"""
+        """全部图表容器齐全 (趋势/模型双条/构成堆叠/每日均价)"""
         html = build_html(seeded_db)
-        for cid in ("chart-trend", "chart-model", "chart-stack"):
+        for cid in ("chart-trend", "chart-model", "chart-stack", "chart-price"):
             assert f'id="{cid}"' in html
         # 类型分布饼图、模型分布饼图、平台占比饼图已删除
         assert 'chart-typepie' not in html
         assert 'chart-modelpie' not in html
         assert 'chart-platform' not in html
+
+    def test_avg_price_chart_wired_and_3_decimals(self, seeded_db):
+        """每日均价曲线已接入渲染流程, 且按 3 位小数展示"""
+        html = build_html(seeded_db)
+        assert html.count("renderAvgPrice") >= 2      # 定义 + renderCharts 调用
+        assert "renderAvgPrice();" in html
+        # 图表内均价统一 3 位小数 (轴标签 toFixed(3), tooltip / 标签用 3 位分组格式)
+        assert "formatter: v => Number(v).toFixed(3)" in html
+        assert "minimumFractionDigits: 3, maximumFractionDigits: 3" in html
 
 
 class TestExportReport:
