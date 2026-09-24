@@ -7,7 +7,9 @@ from unittest import mock
 import pytest
 
 from core.db import Database
-from core.report import TEMPLATE_PATH, build_html, export_report, unsnapped_price_groups
+from core.report import (
+    CHART_COLORS, CHART_COLORS_DARK, TEMPLATE_PATH, build_html, export_report, unsnapped_price_groups,
+)
 
 
 @pytest.fixture
@@ -90,6 +92,28 @@ class TestBuildHtml:
         assert "function fmtRateSeq" in html
         assert "join('→')" in html
         assert "· 单价 " in html
+
+    def test_theme_switching_wired(self, seeded_db):
+        """浅色/暗色双主题: 声明支持两套配色, 图表按主题注册并重建, 选择可记忆
+        (图表文字画在 canvas 里, 浏览器强制暗色反色不到 → 必须自带暗色主题)"""
+        html = build_html(seeded_db)
+        assert '<meta name="color-scheme" content="light dark">' in html
+        assert '<body data-theme' not in html               # 主题写在 <html> 上, CSS 变量才好覆盖
+        assert html.count('data-theme="dark"') >= 1         # 暗色变量块
+        assert "document.documentElement.dataset.theme" in html
+        assert "'apiLedgerLight'" in html and "'apiLedgerDark'" in html
+        assert "echarts.init(el, 'apiLedger' + (themeName === 'dark' ? 'Dark' : 'Light'))" in html
+        assert "localStorage.setItem(THEME_KEY, themeName)" in html
+        assert 'id="btn-theme"' in html
+
+    def test_dark_palette_injected(self, seeded_db):
+        """暗色系列配色: 与浅色同色序、等长、无重复, 且不含浅色里的深色"""
+        html = build_html(seeded_db)
+        assert "__CHART_COLORS_DARK__" not in html
+        assert json.dumps(CHART_COLORS_DARK, ensure_ascii=False) in html
+        assert len(CHART_COLORS_DARK) == len(CHART_COLORS)
+        assert len(set(CHART_COLORS_DARK)) == len(CHART_COLORS_DARK)
+        assert not (set(CHART_COLORS_DARK) & set(CHART_COLORS))
 
 
 class TestExportReport:

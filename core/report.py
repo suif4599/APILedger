@@ -32,6 +32,13 @@ CHART_COLORS = [
     "#27ae60", "#f39c12", "#7f8c8d", "#2c3e50",
 ]
 
+# 暗色主题的系列配色: 与浅色同色序 (同一模型两种主题下颜色含义一致), 整体提亮以适配深底
+CHART_COLORS_DARK = [
+    "#5b9bd5", "#3fbf8a", "#f0b445", "#e5736a",
+    "#b07fd8", "#2ec4a6", "#4aa8e0", "#e88a4a",
+    "#4dd18a", "#f5c542", "#9aa5b1", "#a8b8cc",
+]
+
 
 # ═══════════════════════════════════════════════════
 # 数据提取
@@ -283,6 +290,7 @@ def build_html(db: Database) -> str:
         html = f.read()
     html = html.replace("__DATA_JSON__", json.dumps(data, ensure_ascii=False))
     html = html.replace("__CHART_COLORS__", json.dumps(CHART_COLORS, ensure_ascii=False))
+    html = html.replace("__CHART_COLORS_DARK__", json.dumps(CHART_COLORS_DARK, ensure_ascii=False))
     html = html.replace("__ECHARTS_TAG__", echarts_tag)
     return html
 

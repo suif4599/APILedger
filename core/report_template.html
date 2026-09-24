@@ -3,20 +3,53 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- 报告自带浅色/暗色两套主题: 图表文字画在 canvas 像素里, 浏览器或扩展的强制反色只作用于 DOM
+     (反色不到画布), 所以自己声明支持两套配色, 由脚本按系统偏好或用户选择切换 -->
+<meta name="color-scheme" content="light dark">
 <title>APILedger - API 账单报告</title>
+<script>
+  // 尽早定主题, 避免先按浅色渲染再闪一下 (须在样式之前执行)
+  (function () {
+    try {
+      var t = localStorage.getItem('apiledger-theme');
+      if (t !== 'dark' && t !== 'light')
+        t = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      document.documentElement.dataset.theme = t;
+    } catch (e) {
+      document.documentElement.dataset.theme = 'light';
+    }
+  })();
+</script>
 <style>
   :root {
-    --primary: #1f538d; --secondary: #2fa572; --bg: #f4f6f9;
-    --card: #ffffff; --border: #e3e6ea; --text: #1a1a1a; --muted: #6b7280;
+    /* 浅色主题 (默认) */
+    --primary: #1f538d; --accent: #1f538d; --secondary: #2fa572; --bg: #f4f6f9;
+    --card: #ffffff; --field: #ffffff; --border: #e3e6ea;
+    --text: #1a1a1a; --muted: #6b7280; --empty: #9ca3af;
+    --thead: #f9fafb; --hover: #eef1f4; --row-hover: #f8fafc;
+    --btn2-bg: #e5e7eb; --btn2-text: #374151;
+    color-scheme: light;
+  }
+  /* 暗色主题: 头部脚本把选择写在 <html data-theme> 上; 图表配色见脚本里的 PALETTE */
+  :root[data-theme="dark"] {
+    --primary: #2f6ca8; --accent: #7fb3e0; --secondary: #3fbf8a; --bg: #12151b;
+    --card: #1b1f27; --field: #232a34; --border: #2c3340;
+    --text: #e5e7eb; --muted: #9ca3af; --empty: #7d8794;
+    --thead: #22262f; --hover: #2b323d; --row-hover: #212630;
+    --btn2-bg: #2c3340; --btn2-text: #d1d5db;
+    color-scheme: dark;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; background: var(--bg); color: var(--text); padding: 24px; }
-  h1 { font-size: 22px; margin-bottom: 12px; }
+  h1 { font-size: 22px; }
+  .page-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; }
+  .theme-toggle { padding: 4px 12px; border: 1px solid var(--border); background: var(--card); color: var(--muted); border-radius: 6px; cursor: pointer; font-size: 12px; white-space: nowrap; }
+  .theme-toggle:hover { border-color: var(--primary); color: var(--accent); }
   .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; margin-bottom: 20px; }
   .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
   .card .label { color: var(--muted); font-size: 12px; }
   .card .value { font-size: 24px; font-weight: 700; margin-top: 4px; }
-  .card .value.cost { color: var(--primary); }
+  .card .value.cost { color: var(--accent); }
   .card .value.tokens { color: var(--secondary); }
   .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 20px; }
   .chart-box { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
@@ -28,35 +61,35 @@
   #chart-price { height: 400px; }
   .chart.empty { position: relative; }
   .chart-tabs { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
-  .chart-tabs button { padding: 3px 14px; border: 1px solid var(--border); background: #fff; border-radius: 6px; cursor: pointer; font-size: 12px; }
+  .chart-tabs button { padding: 3px 14px; border: 1px solid var(--border); background: var(--card); color: inherit; border-radius: 6px; cursor: pointer; font-size: 12px; }
   .chart-tabs button.active { background: var(--primary); color: #fff; border-color: var(--primary); }
   .filters { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-bottom: 16px; }
   .filters h3 { font-size: 14px; margin-bottom: 10px; }
   .filter-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
   .filter-item label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 3px; }
-  .filter-item select, .filter-item input { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; background: #fff; }
+  .filter-item select, .filter-item input { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; background: var(--field); color: var(--text); }
   .filter-item input[type="date"] { width: 150px; }
   .filter-item input[type="text"] { width: 200px; }
   .filter-actions { display: flex; gap: 8px; }
-  .preset { padding: 6px 10px; border: 1px solid var(--border); background: #fff; border-radius: 6px; cursor: pointer; font-size: 12px; }
-  .preset:hover { border-color: var(--primary); color: var(--primary); }
+  .preset { padding: 6px 10px; border: 1px solid var(--border); background: var(--card); color: inherit; border-radius: 6px; cursor: pointer; font-size: 12px; }
+  .preset:hover { border-color: var(--primary); color: var(--accent); }
   .preset.active { background: var(--primary); color: #fff; border-color: var(--primary); }
   .date-hint { font-size: 12px; color: var(--muted); align-self: center; }
   .unsnap { color: #e8a838; font-weight: bold; cursor: help; }
   .btn { padding: 6px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; background: var(--primary); color: #fff; }
-  .btn.secondary { background: #e5e7eb; color: #374151; }
+  .btn.secondary { background: var(--btn2-bg); color: var(--btn2-text); }
   .table-wrap { background: var(--card); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  thead { background: #f9fafb; }
+  thead { background: var(--thead); }
   th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
   th { cursor: pointer; user-select: none; font-weight: 600; }
-  th:hover { background: #eef1f4; }
+  th:hover { background: var(--hover); }
   th .arrow { color: var(--muted); font-size: 10px; }
-  tr:hover { background: #f8fafc; }
+  tr:hover { background: var(--row-hover); }
   .table-meta { padding: 10px 14px; font-size: 12px; color: var(--muted); display: flex; justify-content: space-between; align-items: center; }
-  .table-meta .btn-mini { padding: 3px 10px; border: 1px solid var(--border); background: #fff; border-radius: 5px; cursor: pointer; font-size: 12px; color: var(--muted); }
+  .table-meta .btn-mini { padding: 3px 10px; border: 1px solid var(--border); background: var(--card); border-radius: 5px; cursor: pointer; font-size: 12px; color: var(--muted); }
   .pagination { display: flex; gap: 6px; align-items: center; }
-  .pagination button { padding: 4px 12px; border: 1px solid var(--border); background: #fff; border-radius: 5px; cursor: pointer; font-size: 12px; }
+  .pagination button { padding: 4px 12px; border: 1px solid var(--border); background: var(--card); color: var(--text); border-radius: 5px; cursor: pointer; font-size: 12px; }
   .pagination button:disabled { opacity: 0.4; cursor: default; }
   .pagination span { font-size: 12px; color: var(--muted); }
   .num { text-align: right; }
@@ -65,7 +98,10 @@
 </style>
 </head>
 <body>
-  <h1>📊 APILedger 账单报告</h1>
+  <div class="page-head">
+    <h1>📊 APILedger 账单报告</h1>
+    <button type="button" class="theme-toggle" id="btn-theme">🌙 暗色</button>
+  </div>
 
   <!-- 筛选栏 (作用于汇总卡片、全部图表和明细表) -->
   <div class="filters">
@@ -141,7 +177,7 @@
         <span id="table-count">共 0 条</span>
         <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--muted);cursor:pointer;">
           每页显示条数
-          <select id="f-page-size" style="padding:2px 6px;border:1px solid var(--border);border-radius:5px;font-size:12px;color:var(--muted);background:#fff;cursor:pointer;">
+          <select id="f-page-size" style="padding:2px 6px;border:1px solid var(--border);border-radius:5px;font-size:12px;color:var(--muted);background:var(--field);cursor:pointer;">
             <option value="30" selected>30</option>
             <option value="50">50</option>
             <option value="100">100</option>
@@ -182,6 +218,71 @@
   <script>
   const DATA = __DATA_JSON__;
   const CHART_COLORS = __CHART_COLORS__;
+  const CHART_COLORS_DARK = __CHART_COLORS_DARK__;
+
+  // ═══════════════════════════════════════════
+  // 主题 (浅色 / 暗色)
+  // ═══════════════════════════════════════════
+  // 图表文字与图例由 ECharts 画在 canvas 像素里, 浏览器/扩展的"强制暗色"只反色 DOM, 反色不到
+  // 画布 → 与其跟它对着干, 不如自带一套暗色配色。DOM 配色走 CSS 变量 (:root[data-theme="dark"]),
+  // 图表配色走这里的 PALETTE, 坐标轴/图例/tooltip 等通用样式由 registerTheme 提供。
+  // 注意: 主题在 echarts.init 时绑定, 切换主题必须销毁实例重建 (见 toggleTheme)。
+  const PALETTE = {
+    light: {
+      canvas: '#ffffff', series: CHART_COLORS,
+      cost: '#1f538d', tokens: '#2fa572', avgLine: '#c0392b',
+      bucket: { '缓存输入': '#16a085', '输入': '#1f538d', '输出': '#e8a838' },
+      warn: '#e8a838', note: '#6b7280', tipMuted: '#d1d5db',
+      label: 'inherit',          // 图内数值标注: 浅色沿用 ECharts 默认色, 观感不变
+    },
+    dark: {
+      canvas: '#1b1f27', series: CHART_COLORS_DARK,
+      cost: '#7fb3e0', tokens: '#3fbf8a', avgLine: '#e5736a',
+      bucket: { '缓存输入': '#2ec4a6', '输入': '#7fb3e0', '输出': '#f0b445' },
+      warn: '#f0b445', note: '#9ca3af', tipMuted: '#9ca3af',
+      label: '#e5e7eb',          // 暗色必须显式给浅色: 默认色是深灰, 压在深底上看不见
+    },
+  };
+  if (typeof echarts !== 'undefined' && echarts.registerTheme) {
+    // 浅色也显式给画布底 (与卡片同色, 观感不变): 画布透明时, 一旦 DOM 被外部工具暗化就会压住图内文字
+    echarts.registerTheme('apiLedgerLight', { backgroundColor: PALETTE.light.canvas });
+    const AXIS_DARK = {
+      axisLine: { lineStyle: { color: '#2c3340' } },
+      axisTick: { lineStyle: { color: '#2c3340' } },
+      axisLabel: { color: '#9ca3af' },
+      splitLine: { lineStyle: { color: '#2c3340' } },
+      nameTextStyle: { color: '#9ca3af' },
+    };
+    echarts.registerTheme('apiLedgerDark', {
+      backgroundColor: PALETTE.dark.canvas,
+      color: CHART_COLORS_DARK,          // 未显式指定颜色的系列兜底
+      categoryAxis: AXIS_DARK, valueAxis: AXIS_DARK,
+      legend: { textStyle: { color: '#e5e7eb' } },
+      tooltip: {
+        backgroundColor: 'rgba(24,28,34,0.95)', borderColor: '#2c3340',
+        textStyle: { color: '#e5e7eb' },
+      },
+    });
+  }
+
+  const THEME_KEY = 'apiledger-theme';   // 手动选择存在这里 (与头部脚本同一个键)
+  let themeName = 'light';
+  let P = PALETTE.light;                 // 当前主题配色, 渲染函数统一从这里取色
+
+  function setTheme(name) {
+    themeName = PALETTE[name] ? name : 'light';
+    P = PALETTE[themeName];
+    document.documentElement.dataset.theme = themeName;
+    const btn = document.getElementById('btn-theme');
+    if (btn) btn.textContent = themeName === 'dark' ? '☀️ 浅色' : '🌙 暗色';
+  }
+
+  function toggleTheme() {
+    setTheme(themeName === 'dark' ? 'light' : 'dark');
+    try { localStorage.setItem(THEME_KEY, themeName); } catch (e) { /* file:// 下可能不可写 */ }
+    Object.keys(charts).forEach(id => disposeChart(id));
+    renderCharts();
+  }
 
   // ═══════════════════════════════════════════
   // 状态
@@ -201,10 +302,11 @@
 
   // 类型归并: 预设价格推断可能产生 "输入(缓存命中)" 等类型名, 统一归入三桶
   // 数组顺序即堆叠顺序 (自下而上): 缓存输入 → 输入 → 输出; 匹配规则显式互斥, 与顺序无关
+  // 颜色不写死在这里, 取 P.bucket[key] (随主题变)
   const TYPE_BUCKETS = [
-    { key: '缓存输入', color: '#16a085', match: t => t.includes('缓存') },
-    { key: '输入', color: '#1f538d', match: t => !t.includes('缓存') && !t.includes('输出') },
-    { key: '输出', color: '#e8a838', match: t => t.includes('输出') },
+    { key: '缓存输入', match: t => t.includes('缓存') },
+    { key: '输入', match: t => !t.includes('缓存') && !t.includes('输出') },
+    { key: '输出', match: t => t.includes('输出') },
   ];
 
   // ═══════════════════════════════════════════
@@ -416,7 +518,7 @@
   function showEmpty(el, msg) {
     disposeChart(el.id);
     el.dataset.hadContent = 1;
-    el.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#9ca3af;font-size:13px;">' + msg + '</div>';
+    el.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--empty);font-size:13px;">' + msg + '</div>';
   }
 
   function getChart(id, el) {
@@ -427,7 +529,7 @@
       delete el.dataset.hadContent;
       disposeChart(id);
     }
-    if (!charts[id]) charts[id] = echarts.init(el);
+    if (!charts[id]) charts[id] = echarts.init(el, 'apiLedger' + (themeName === 'dark' ? 'Dark' : 'Light'));
     return charts[id];
   }
 
@@ -494,13 +596,13 @@
       series: [
         {
           name: '费用', type: 'line', data: costVals, smooth: true,
-          itemStyle: { color: '#1f538d' }, areaStyle: { opacity: 0.08 },
+          itemStyle: { color: P.cost }, areaStyle: { opacity: 0.08 },
           markLine: avg ? { data: [{ yAxis: avg }], silent: true, symbol: 'none',
-            lineStyle: { type: 'dashed', color: '#c0392b' }, label: { formatter: '均值' } } : undefined,
+            lineStyle: { type: 'dashed', color: P.avgLine }, label: { formatter: '均值' } } : undefined,
         },
         {
           name: 'Tokens', type: 'line', yAxisIndex: 1, data: tokenVals, smooth: true,
-          itemStyle: { color: '#2fa572' }, areaStyle: { opacity: 0.08 },
+          itemStyle: { color: P.tokens }, areaStyle: { opacity: 0.08 },
         },
       ],
     }, true);
@@ -558,17 +660,17 @@
         {
           name: 'Tokens', type: 'bar',
           data: rows.map(g => totalTokens ? g.tokens / totalTokens * 100 : 0),
-          itemStyle: { color: '#2fa572', borderRadius: [0, 4, 4, 0] },
+          itemStyle: { color: P.tokens, borderRadius: [0, 4, 4, 0] },
           barMaxWidth: 12,
-          label: { show: true, position: 'right',
+          label: { show: true, position: 'right', color: P.label,
                    formatter: p => fmtTokensM(rows[p.dataIndex].tokens), fontSize: 10 },
         },
         {
           name: '费用', type: 'bar',
           data: rows.map(g => totalCost ? g.cost / totalCost * 100 : 0),
-          itemStyle: { color: '#1f538d', borderRadius: [0, 4, 4, 0] },
+          itemStyle: { color: P.cost, borderRadius: [0, 4, 4, 0] },
           barMaxWidth: 12,
-          label: { show: true, position: 'right',
+          label: { show: true, position: 'right', color: P.label,
                    formatter: p => fmtCost2(rows[p.dataIndex].cost), fontSize: 10 },
         },
       ],
@@ -595,7 +697,7 @@
     };
     // 行内最顶端的非零段右侧显示均价标签 (只在该段处标注一次)
     const labelFor = (bucketIdx) => ({
-      show: true, position: 'right', fontSize: 11, color: '#6b7280',
+      show: true, position: 'right', fontSize: 11, color: P.note,
       formatter: p => {
         const g = groups[groups.length - 1 - p.dataIndex];
         if (!g) return '';
@@ -614,7 +716,7 @@
         const total = totalOf(g);
         return total ? +(v * 100 / total).toFixed(2) : 0;
       }).reverse(),
-      itemStyle: { color: b.color },
+      itemStyle: { color: P.bucket[b.key] },
       label: labelFor(i),
     }));
     const labels = groups.map(g => g.label).reverse();
@@ -631,14 +733,14 @@
             s += '<br>' + p.marker + ' ' + p.seriesName + ': ' + fmtMetric(abs, metric) + ' (' + p.value + '%)';
             // 该类型的单价 (吸附后): 区间内恒定显示单值, 期间调价显示 "¥2→¥5"
             const rate = g ? fmtRateSeq(g.priceSeq[p.seriesName]) : '';
-            if (rate) s += ' <span style="color:#6b7280">· 单价 ' + rate + '</span>';
+            if (rate) s += ' <span style="color:' + P.tipMuted + '">· 单价 ' + rate + '</span>';
           }
           // 末尾追加整行均价 (含未吸附行时说明数量)
           const g = groups[groups.length - 1 - params[0].dataIndex];
           if (!g) return s;
-          let line = '<br><span style="color:#6b7280">均价: ' + avgRateText(g) + '</span>';
+          let line = '<br><span style="color:' + P.tipMuted + '">均价: ' + avgRateText(g) + '</span>';
           if (g.unsnapped) {
-            line += '<br><span style="color:#e8a838">' + g.unsnapped + ' 行单价未匹配预设官方价 (标 *)</span>';
+            line += '<br><span style="color:' + P.warn + '">' + g.unsnapped + ' 行单价未匹配预设官方价 (标 *)</span>';
           }
           return s + line;
         },
@@ -709,7 +811,7 @@
         .map((b, i) => ({ key: b.key, n: g.buckets[i] || 0 }))
         .filter(x => x.n > 0)
         .map(x => x.key + ' ' + (x.n / g.den * 100).toFixed(2) + '%');
-      return parts.length ? '<br><span style="color:#9ca3af;">　' + parts.join(' · ') + '</span>' : '';
+      return parts.length ? '<br><span style="color:' + P.tipMuted + ';">　' + parts.join(' · ') + '</span>' : '';
     };
     // 图例平铺成若干行 (不翻页), 行数随容器宽度变化 → 据此预留底部空间, 否则会压住日期标签
     const legendRows = Math.ceil(lines.length /
@@ -730,8 +832,8 @@
           return s;
         },
       },
-      legend: { bottom: 0, type: 'plain', itemGap: 10,
-                textStyle: { color: '#1a1a1a', fontSize: 11 } },
+      // 图例平铺成多行; 文字色留给主题 (浅色深字 / 暗色浅字), 这里只管字号
+      legend: { bottom: 0, type: 'plain', itemGap: 10, textStyle: { fontSize: 11 } },
       grid: { left: 70, right: 30, top: 46, bottom: 52 + legendRows * 22 },
       xAxis: { type: 'category', data: dateList, axisLabel: { rotate: 45, fontSize: 10 } },
       yAxis: { type: 'value', name: '均价(¥/M)',
@@ -741,7 +843,7 @@
       series: lines.map((l, i) => ({
         name: l.name, type: 'line', smooth: true, connectNulls: false,
         symbolSize: 5,
-        itemStyle: { color: CHART_COLORS[i % CHART_COLORS.length] },
+        itemStyle: { color: P.series[i % P.series.length] },
         data: dateList.map(d => {
           const g = l.byDate.get(d);
           return g && g.den ? +(g.num / g.den).toFixed(3) : null;
@@ -849,7 +951,7 @@
     tbody.innerHTML = '';
     if (!slice.length) {
       const tr = document.createElement('tr');
-      tr.innerHTML = '<td colspan="9" style="text-align:center;color:#9ca3af;padding:24px;">无匹配数据</td>';
+      tr.innerHTML = '<td colspan="9" style="text-align:center;color:var(--empty);padding:24px;">无匹配数据</td>';
       tbody.appendChild(tr);
       return;
     }
@@ -1001,6 +1103,10 @@
   buildOptions('f-project', 'project');
   buildOptions('f-model', 'model');
   buildOptions('f-type', 'type');
+  // 主题: 头部脚本已按 (手动选择 → 系统偏好) 定好属性, 这里同步 JS 状态与按钮文案;
+  // 必须在首次渲染图表之前, 否则图表实例会按默认主题创建
+  setTheme(document.documentElement.dataset.theme);
+  document.getElementById('btn-theme').addEventListener('click', toggleTheme);
   applyPreset('1m');  // 初始默认区间: 近1月
   </script>
 </body>

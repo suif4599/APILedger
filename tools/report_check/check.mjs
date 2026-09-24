@@ -5,10 +5,12 @@
  *       tooltip 文案 / 空态"这类渲染出来看不出、只能靠肉眼的隐性问题。
  *       校验项全部是稳定不变量 (不写死布局数字):
  *         1. 四个图表容器都拿到了 ECharts option (脚本没崩、没改名)
- *         2. 均价曲线每个点都落在当日该模型原始单价范围 (含 5% 吸附容差) 内
- *         3. 均价 tooltip 的类型占比合计 100.00% 且保留 2 位小数
- *         4. 各图表 tooltip 文案不含 undefined / NaN
- *         5. 空态 (无筛选结果 / 全零单价) 不抛异常, 且给出对应的空态提示
+ *         2. 浅色/暗色两套主题都注册了不透明画布背景, 且同一轮渲染里四图同主题
+ *         3. 切到暗色后: 使用暗色画布 + 暗色系列配色, option 里不残留浅色硬编码
+ *         4. 均价曲线每个点都落在当日该模型原始单价范围 (含 5% 吸附容差) 内
+ *         5. 均价 tooltip 的类型占比合计 100.00% 且保留 2 位小数
+ *         6. 各图表 tooltip 文案不含 undefined / NaN
+ *         7. 空态 (无筛选结果 / 全零单价) 不抛异常, 且给出对应的空态提示
  *
  * 用法: pixi run check-report
  *       node tools/report_check/check.mjs <report.html 路径>   (默认 output/report.html)
@@ -49,6 +51,8 @@ const CHART_IDS = ['chart-trend', 'chart-model', 'chart-stack', 'chart-price'];
 function makeEnv() {
   const els = new Map();
   const options = {};
+  const themes = {};   // registerTheme 注册的主题
+  const inits = [];    // echarts.init 调用记录 { id, theme }
   const el = id => ({
     id, value: '', textContent: '', innerHTML: '', disabled: false, selectedIndex: 0,
     clientWidth: 1400, dataset: {}, style: {},
@@ -57,17 +61,29 @@ function makeEnv() {
   });
   const getEl = id => { if (!els.has(id)) els.set(id, el(id)); return els.get(id); };
 
-  global.document = { getElementById: getEl, querySelectorAll: () => [], createElement: () => el('') };
+  global.document = {
+    getElementById: getEl, querySelectorAll: () => [], createElement: () => el(''),
+    documentElement: { dataset: {}, style: {} },   // 主题写在 <html data-theme> 上
+  };
   global.window = global;
   global.addEventListener = () => {};
-  global.echarts = {
-    init: e => ({
-      setOption: o => { if (e && e.id) options[e.id] = o; },
-      dispose() {},
-      resize() {},
-    }),
+  global.localStorage = {
+    store: {},
+    getItem(k) { return Object.prototype.hasOwnProperty.call(this.store, k) ? this.store[k] : null; },
+    setItem(k, v) { this.store[k] = String(v); },
   };
-  return { els, options, getEl };
+  global.echarts = {
+    registerTheme: (name, cfg) => { themes[name] = cfg; },
+    init: (e, theme) => {
+      inits.push({ id: e && e.id, theme });
+      return {
+        setOption: o => { if (e && e.id) options[e.id] = o; },
+        dispose() {},
+        resize() {},
+      };
+    },
+  };
+  return { els, options, themes, inits, getEl, document: global.document, localStorage: global.localStorage };
 }
 
 // 跑一遍报告脚本, 末尾追加 tail (可访问脚本作用域内的 filtered / ROWS / renderCharts 等)
@@ -94,7 +110,7 @@ console.log(`\n报告: ${REPORT_PATH}`);
 console.log('\n── 渲染与数据口径 ──');
 
 const env = makeEnv();
-const { ROWS } = runReport(env, 'filtered = ROWS; renderCharts(); return { ROWS };');
+const { ROWS, PALETTE } = runReport(env, 'filtered = ROWS; renderCharts(); return { ROWS, PALETTE };');
 
 if (!ROWS.length) {
   console.log('     --  报告内无记录, 跳过数据类检查 (只做空态检查)');
@@ -102,6 +118,32 @@ if (!ROWS.length) {
   for (const id of CHART_IDS) {
     ok(!!env.options[id], `图表 ${id} 渲染出 option`);
   }
+
+  // ── 画布必须有不透明背景: 图例/坐标轴文字画在 canvas 像素里, 浏览器/扩展的强制
+  //    暗色只能反色 DOM → 透明画布会让变暗的 DOM 压住图内文字; 两套主题都要给画布底 ──
+  const lum = hex => {                         // 相对亮度 (0 黑 ~ 1 白), 判断底色明暗
+    const m = /^#([0-9a-f]{6})$/i.exec(String(hex));
+    if (!m) return -1;
+    const n = parseInt(m[1], 16);
+    const ch = [n >> 16 & 255, n >> 8 & 255, n & 255].map(v => {
+      v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+    });
+    return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2];
+  };
+  const lightCfg = env.themes['apiLedgerLight'], darkCfg = env.themes['apiLedgerDark'];
+  ok(!!(lightCfg && lightCfg.backgroundColor && darkCfg && darkCfg.backgroundColor),
+     '浅色/暗色主题都注册了不透明画布背景 (暗色环境下图内文字不被压住)',
+     [`已注册主题: ${Object.keys(env.themes).join(', ') || '无'}`]);
+  ok(lum(lightCfg && lightCfg.backgroundColor) > 0.5 && lum(darkCfg && darkCfg.backgroundColor) < 0.2,
+     '浅色主题画布底浅 / 暗色主题画布底深',
+     [`浅色 ${lightCfg && lightCfg.backgroundColor} / 暗色 ${darkCfg && darkCfg.backgroundColor}`]);
+  const mixed = env.inits.filter(i => i.theme !== 'apiLedgerLight').map(i => `${i.id}: ${i.theme}`);
+  ok(env.inits.length > 0 && mixed.length === 0, '默认(浅色)渲染下所有图表都用浅色主题', mixed);
+
+  // ── 图内数值标注色 (条形右侧的绝对值): 浅色沿用 ECharts 默认, 暗色必须显式给浅色 ──
+  const lightLabels = ((env.options['chart-model'] || {}).series || []).map(s => s.label && s.label.color);
+  ok(lightLabels.length > 0 && lightLabels.every(c => c === PALETTE.light.label),
+     '浅色下数值标注沿用默认色 (加暗色不该改动浅色观感)', [`实际: ${lightLabels.join(', ')}`]);
 
   // ── 均价曲线: 每个点必须是当日该模型原始单价的加权平均 (吸附只在 ±5% 内偏移) ──
   const priceOpt = env.options['chart-price'];
@@ -188,7 +230,53 @@ if (!ROWS.length) {
 }
 
 // ═══════════════════════════════════════════
-// 2. 空态: 不抛异常, 且给出对应提示
+// 2. 暗色主题: 切主题后重建实例, 用暗色画布与暗色系列配色
+// ═══════════════════════════════════════════
+console.log('\n── 暗色主题 ──');
+
+// 浅色系列色不应出现在暗色 option 里 (漏改一处 = 暗色下某条线/某个标签糊在深底上)
+const LIGHT_ONLY = ['#ffffff', '#1a1a1a', '#1f538d', '#2fa572', '#c0392b'];
+const darkEnv = makeEnv();
+const darkRun = runReport(darkEnv,
+  'filtered = ROWS; toggleTheme(); return { ROWS, CHART_COLORS, CHART_COLORS_DARK, PALETTE };');
+
+if (!darkRun.ROWS.length) {
+  console.log('     --  报告内无记录, 跳过暗色检查 (只做空态检查)');
+} else {
+  const darkThemed = darkEnv.inits.filter(i => i.theme === 'apiLedgerDark').map(i => i.id);
+  ok(CHART_IDS.every(id => darkThemed.includes(id)),
+     '切到暗色后四个图表都用暗色主题重建 (主题在 init 时绑定, 必须重建实例)',
+     [`未重建: ${CHART_IDS.filter(id => !darkThemed.includes(id)).join(', ') || '无'}`]);
+  ok(darkEnv.document.documentElement.dataset.theme === 'dark', '主题选择写到 <html data-theme>');
+  ok(darkEnv.localStorage.getItem('apiledger-theme') === 'dark', '主题选择被记住 (localStorage)');
+  ok(String(darkEnv.getEl('btn-theme').textContent).includes('浅色'),
+     '主题按钮文案切到"浅色" (点击可切回)', [`实际: ${darkEnv.getEl('btn-theme').textContent}`]);
+
+  const dOpt = darkEnv.options['chart-price'];
+  if (!dOpt) {
+    ok(false, '暗色下均价曲线未渲染, 无法校验配色');
+  } else {
+    const used = dOpt.series.map(s => s.itemStyle && s.itemStyle.color);
+    const want = used.map((_, i) => darkRun.CHART_COLORS_DARK[i % darkRun.CHART_COLORS_DARK.length]);
+    ok(used.length > 0 && used.every((c, i) => c === want[i]),
+       `暗色下均价曲线改用暗色系列配色 (${used.length} 条)`, [`实际: ${used.join(', ')}`]);
+    const legColor = dOpt.legend && dOpt.legend.textStyle && dOpt.legend.textStyle.color;
+    ok(!legColor, '图例文字色不写死 (交给主题, 否则暗色下深字压深底看不清)',
+       [`legend.textStyle.color = ${legColor}`]);
+    const darkLabels = ((darkEnv.options['chart-model'] || {}).series || []).map(s => s.label && s.label.color);
+    ok(darkLabels.length > 0 && darkLabels.every(c => c === darkRun.PALETTE.dark.label),
+       '暗色下数值标注改用浅色 (默认色压在深底上看不见)', [`实际: ${darkLabels.join(', ')}`]);
+    const leaked = [];
+    for (const id of CHART_IDS) {
+      const json = JSON.stringify(darkEnv.options[id] || {});
+      for (const c of LIGHT_ONLY) if (json.includes(c)) leaked.push(`${id}: ${c}`);
+    }
+    ok(leaked.length === 0, '暗色 option 里不残留浅色硬编码', leaked);
+  }
+}
+
+// ═══════════════════════════════════════════
+// 3. 空态: 不抛异常, 且给出对应提示
 // ═══════════════════════════════════════════
 console.log('\n── 空态 ──');
 
