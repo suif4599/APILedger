@@ -76,14 +76,20 @@ class TestBuildHtml:
         assert 'chart-modelpie' not in html
         assert 'chart-platform' not in html
 
-    def test_avg_price_chart_wired_and_3_decimals(self, seeded_db):
-        """每日均价曲线已接入渲染流程, 且按 3 位小数展示"""
+    def test_avg_price_chart_wired_and_formats(self, seeded_db):
+        """每日均价曲线: 接入渲染流程 (含 resize 重算), 图例平铺非翻页, 纵轴刻度去多余小数"""
         html = build_html(seeded_db)
-        assert html.count("renderAvgPrice") >= 2      # 定义 + renderCharts 调用
-        assert "renderAvgPrice();" in html
-        # 图表内均价统一 3 位小数 (轴标签 toFixed(3), tooltip / 标签用 3 位分组格式)
-        assert "formatter: v => Number(v).toFixed(3)" in html
-        assert "minimumFractionDigits: 3, maximumFractionDigits: 3" in html
+        assert html.count("renderAvgPrice") >= 3      # 定义 + renderCharts + resize
+        assert "legend: { bottom: 0, type: 'plain'" in html
+        assert "minimumFractionDigits: 3, maximumFractionDigits: 3" in html   # 均价 3 位小数
+        assert "Number(v).toFixed(3)" not in html     # 刻度不再强制小数点
+
+    def test_stack_tooltip_shows_unit_price(self, seeded_db):
+        """构成对比 tooltip: 各类型单价, 期间调价按 "¥2→¥5" 展示"""
+        html = build_html(seeded_db)
+        assert "function fmtRateSeq" in html
+        assert "join('→')" in html
+        assert "· 单价 " in html
 
 
 class TestExportReport:

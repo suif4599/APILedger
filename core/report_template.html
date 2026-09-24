@@ -24,6 +24,8 @@
   .chart-box h3 { font-size: 14px; margin-bottom: 8px; }
   .chart-box h3 .hint { color: var(--muted); font-weight: normal; font-size: 12px; }
   .chart { width: 100%; height: 320px; }
+  /* 各模型每日均价: 折线 + 多行平铺图例, 需要更高的画布 */
+  #chart-price { height: 400px; }
   .chart.empty { position: relative; }
   .chart-tabs { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
   .chart-tabs button { padding: 3px 14px; border: 1px solid var(--border); background: #fff; border-radius: 6px; cursor: pointer; font-size: 12px; }
@@ -127,7 +129,7 @@
       <div id="chart-stack" class="chart"></div>
     </div>
     <div class="chart-box wide">
-      <h3>各模型每日均价 <span class="hint">(每 1M Tokens 加权均价 = Σ单价×Tokens / ΣTokens，与「模型构成对比」同口径)</span></h3>
+      <h3>模型均价变化趋势 <span class="hint">(每 1M Tokens 均价)</span></h3>
       <div id="chart-price" class="chart"></div>
     </div>
   </div>
@@ -294,6 +296,16 @@
     return '¥' + Number(sp.value).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: Math.max(2, dec) });
   }
 
+  // 单价序列 (按时间先后记录的各档单价): 恒定 → "¥2"; 期间调价 → "¥2→¥5";
+  // 档位过多 (未吸附噪声) 时只标首尾, 避免 tooltip 过长
+  function fmtRateSeq(seq) {
+    if (!seq || !seq.length) return '';
+    const f = v => '¥' + Number(v).toLocaleString('zh-CN', { maximumFractionDigits: 4 });
+    if (seq.length === 1) return f(seq[0]);
+    if (seq.length <= 3) return seq.map(f).join('→');
+    return f(seq[0]) + '→…→' + f(seq[seq.length - 1]);
+  }
+
   // ═══════════════════════════════════════════
   // 聚合工具 (对 filtered 实时计算)
   // ═══════════════════════════════════════════
@@ -325,12 +337,15 @@
   // 排序固定按 token 消耗量取 Top-15, 切换 token/费用 指标不改变模型顺序
   // priceCost: Σ(每行吸附后单价 × tokens), 供加权均价 (元/1M tokens)
   function typeStackGroups() {
-    const map = new Map();  // label -> { label, tokens: Map, cost: Map, tokenTotal, costTotal, priceCost }
-    for (const r of filtered) {
+    const map = new Map();  // label -> { label, tokens: Map, cost: Map, tokenTotal, costTotal, priceCost, priceSeq }
+    // 按日期升序: 单价序列要按时间先后记录各档价格 (恒定一档 / 调价多档)
+    const rows = [...filtered].sort((a, b) => String(a.bill_start).localeCompare(String(b.bill_start)));
+    for (const r of rows) {
       const label = r.platform ? `${r.platform} · ${r.model || '(空)'}` : (r.model || '(空)');
       let g = map.get(label);
       if (!g) {
-        g = { label, tokens: new Map(), cost: new Map(), tokenTotal: 0, costTotal: 0, priceCost: 0, unsnapped: 0 };
+        g = { label, tokens: new Map(), cost: new Map(), tokenTotal: 0, costTotal: 0,
+              priceCost: 0, priceSeq: {}, unsnapped: 0 };
         map.set(label, g);
       }
       const tokens = Number(r.tokens || 0);
@@ -342,6 +357,10 @@
       const sp = snapUnitPrice(r);
       g.priceCost += sp.value * tokens;
       if (!sp.snapped) g.unsnapped += 1;
+      if (sp.value > 0) {                  // 单价 0 (无价) 的行不进序列
+        const seq = g.priceSeq[bucket] || (g.priceSeq[bucket] = []);
+        if (seq.indexOf(sp.value) === -1) seq.push(sp.value);
+      }
     }
     return [...map.values()]
       .filter(g => g.tokenTotal > 0 || g.costTotal > 0)
@@ -610,6 +629,9 @@
             const g = groups[groups.length - 1 - p.dataIndex];
             const abs = g ? (g[bucketMap].get(p.seriesName) || 0) : 0;
             s += '<br>' + p.marker + ' ' + p.seriesName + ': ' + fmtMetric(abs, metric) + ' (' + p.value + '%)';
+            // 该类型的单价 (吸附后): 区间内恒定显示单值, 期间调价显示 "¥2→¥5"
+            const rate = g ? fmtRateSeq(g.priceSeq[p.seriesName]) : '';
+            if (rate) s += ' <span style="color:#6b7280">· 单价 ' + rate + '</span>';
           }
           // 末尾追加整行均价 (含未吸附行时说明数量)
           const g = groups[groups.length - 1 - params[0].dataIndex];
@@ -651,7 +673,7 @@
     };
 
     const dates = new Set();
-    const seriesMap = new Map();   // label -> Map(日期 -> {num, den})
+    const seriesMap = new Map();   // label -> Map(日期 -> {num, den, buckets})
     for (const r of filtered) {
       const tokens = Number(r.tokens || 0);
       const d = String(r.bill_start).slice(0, 10);
@@ -660,9 +682,12 @@
       const label = labelOf(r);
       let byDate = seriesMap.get(label);
       if (!byDate) { byDate = new Map(); seriesMap.set(label, byDate); }
-      const g = byDate.get(d) || { num: 0, den: 0 };
+      // buckets: 与 TYPE_BUCKETS 同序的当日 token 量, 供 tooltip 展示各类型占比
+      const g = byDate.get(d) || { num: 0, den: 0, buckets: [] };
       g.num += price * tokens;
       g.den += tokens;
+      const bi = TYPE_BUCKETS.findIndex(b => b.match(r.type || ''));
+      g.buckets[bi] = (g.buckets[bi] || 0) + tokens;
       byDate.set(d, g);
       dates.add(d);
     }
@@ -677,27 +702,45 @@
         tokens: [...byDate.values()].reduce((s, g) => s + g.den, 0) }))
       .sort((a, b) => b.tokens - a.tokens);
     const fmtPrice3 = v => '¥' + Number(v).toLocaleString('zh-CN', { minimumFractionDigits: 3, maximumFractionDigits: 3 }) + '/M';
+    // tooltip 追加行: 该模型当日的 token 类型占比 (%, 2 位小数); 与均价同口径, 只计有单价的 tokens
+    const shareLine = g => {
+      if (!g || !g.den) return '';
+      const parts = TYPE_BUCKETS
+        .map((b, i) => ({ key: b.key, n: g.buckets[i] || 0 }))
+        .filter(x => x.n > 0)
+        .map(x => x.key + ' ' + (x.n / g.den * 100).toFixed(2) + '%');
+      return parts.length ? '<br><span style="color:#9ca3af;">　' + parts.join(' · ') + '</span>' : '';
+    };
+    // 图例平铺成若干行 (不翻页), 行数随容器宽度变化 → 据此预留底部空间, 否则会压住日期标签
+    const legendRows = Math.ceil(lines.length /
+      Math.max(1, Math.floor((el.clientWidth || 900) / 170)));
 
     chart.setOption({
       tooltip: {
         trigger: 'axis',
         formatter: params => {
-          let s = params[0].axisValue;
+          const date = params[0].axisValue;
+          let s = date;
           for (const p of params) {           // 当日无数据的线 (空点) 不列入
             if (p.value == null) continue;
             s += '<br>' + p.marker + ' ' + p.seriesName + ': ' + fmtPrice3(p.value);
+            const byDate = seriesMap.get(p.seriesName);
+            s += shareLine(byDate ? byDate.get(date) : null);
           }
           return s;
         },
       },
-      legend: { bottom: 0, type: 'scroll' },
-      grid: { left: 70, right: 30, top: 20, bottom: 46 },
+      legend: { bottom: 0, type: 'plain', itemGap: 10,
+                textStyle: { color: '#1a1a1a', fontSize: 11 } },
+      grid: { left: 70, right: 30, top: 46, bottom: 52 + legendRows * 22 },
       xAxis: { type: 'category', data: dateList, axisLabel: { rotate: 45, fontSize: 10 } },
       yAxis: { type: 'value', name: '均价(¥/M)',
-               axisLabel: { fontSize: 10, formatter: v => Number(v).toFixed(3) } },
+               // 刻度去掉多余小数 (10 → "10", 0.5 → "0.5")
+               axisLabel: { fontSize: 10,
+                 formatter: v => Number(v).toLocaleString('zh-CN', { maximumFractionDigits: 3 }) } },
       series: lines.map((l, i) => ({
         name: l.name, type: 'line', smooth: true, connectNulls: false,
-        symbolSize: 6, emphasis: { focus: 'series' },
+        symbolSize: 5,
         itemStyle: { color: CHART_COLORS[i % CHART_COLORS.length] },
         data: dateList.map(d => {
           const g = l.byDate.get(d);
@@ -941,7 +984,10 @@
   document.getElementById('btn-apply').addEventListener('click', applyFilters);
   document.getElementById('btn-reset').addEventListener('click', resetFilters);
 
-  window.addEventListener('resize', () => Object.values(charts).forEach(c => c.resize()));
+  window.addEventListener('resize', () => {
+    Object.values(charts).forEach(c => c.resize());
+    renderAvgPrice();   // 图例换行数 / 底部留白随容器宽度变化, 需重算
+  });
 
   // ═══════════════════════════════════════════
   // 初始化
