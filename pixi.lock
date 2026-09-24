@@ -44,6 +44,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/win-64/libzlib-1.3.2-hfd05255_2.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/llvm-openmp-22.1.8-h4fa8253_0.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/mkl-2026.0.0-hac47afa_908.conda
+      - conda: https://conda.anaconda.org/conda-forge/win-64/nodejs-26.8.2-h80d1838_0.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/numpy-2.5.0-py314h02f10f6_0.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/onemkl-license-2026.0.0-h57928b3_908.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/openpyxl-3.1.5-py314hccc76fc_3.conda
@@ -556,6 +557,16 @@ packages:
   run_exports: {}
   size: 114354729
   timestamp: 1779293121860
+- conda: https://conda.anaconda.org/conda-forge/win-64/nodejs-26.8.2-h80d1838_0.conda
+  sha256: 688a4380182f441d73e1f5df12e7208c580fabf7721c4abe676e71da7d1f91ac
+  md5: f8b742366571b3313dbfb115f7746b56
+  license: MIT
+  license_family: MIT
+  run_exports:
+    weak:
+    - nodejs >=26.8.2,<27.0a0
+  size: 34252215
+  timestamp: 1789241587895
 - conda: https://conda.anaconda.org/conda-forge/win-64/numpy-2.5.0-py314h02f10f6_0.conda
   sha256: 86c3e926fa1d6f27ebe6b9db11ff12e9a3b6e4b0343bf4a9b489dafd9614da3f
   md5: f92585b1624ecdd117b6d13fd4d691ed
