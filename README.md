@@ -120,7 +120,6 @@ APILedger/
 │   ├── presets.py          # 平台预设引擎 (加载/匹配/应用 presets/*.py)
 │   ├── report.py           # HTML 报告生成器 (数据提取 + 模板渲染)
 │   ├── report_template.html# 报告 HTML 模板 (前端筛选/图表/表格)
-│   ├── config.py           # 配置
 │   ├── db.py               # SQLite 数据库操作 (建表/UPSERT/聚合查询)
 │   └── importer.py         # XLSX / CSV 文件扫描、列匹配、导入、归档
 ├── presets/                # 平台导入预设 (每平台一个 .py 文件)
