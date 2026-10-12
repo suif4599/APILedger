@@ -21,8 +21,12 @@ CORE_DIR = os.path.dirname(os.path.abspath(__file__))
 TEMPLATE_PATH = os.path.join(CORE_DIR, "report_template.html")
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-OUTPUT_DIR = os.path.join(BASE_DIR, "output")
-ECHARTS_PATH = os.path.join(OUTPUT_DIR, "echarts.min.js")
+# 报告属于用户数据, 与其他用户数据一起放 data/
+DATA_DIR = os.path.join(BASE_DIR, "data")
+REPORT_FILENAME = "report.html"
+# echarts 是运行时下载的第三方缓存, 既不入库也不属于用户数据, 单独放 .cache/
+CACHE_DIR = os.path.join(BASE_DIR, ".cache")
+ECHARTS_PATH = os.path.join(CACHE_DIR, "echarts.min.js")
 ECHARTS_CDN = "https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"
 
 # 主题色
@@ -267,7 +271,7 @@ def _echarts_script_tag() -> str:
 
     # 尝试下载到本地
     try:
-        os.makedirs(OUTPUT_DIR, exist_ok=True)
+        os.makedirs(CACHE_DIR, exist_ok=True)
         print("  [报告] 下载 echarts.min.js (首次使用)...", flush=True)
         urllib.request.urlretrieve(ECHARTS_CDN, ECHARTS_PATH)
         with open(ECHARTS_PATH, "r", encoding="utf-8", errors="replace") as f:
@@ -298,10 +302,10 @@ def build_html(db: Database) -> str:
 def export_report(db: Database, output_path: str = "") -> str:
     """
     生成报告文件并写入磁盘, 返回文件绝对路径。
-    默认写到 output/report.html (固定文件名, 重新生成即覆盖)。
+    默认写到 data/report.html (固定文件名, 重新生成即覆盖)。
     """
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
-    path = output_path or os.path.join(OUTPUT_DIR, "report.html")
+    os.makedirs(DATA_DIR, exist_ok=True)
+    path = output_path or os.path.join(DATA_DIR, REPORT_FILENAME)
     with open(path, "w", encoding="utf-8") as f:
         f.write(build_html(db))
     return os.path.abspath(path)

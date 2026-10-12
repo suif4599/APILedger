@@ -2,7 +2,7 @@
 
 ## 用途
 
-报告 `output/report.html` 里的图表逻辑（聚合口径、单价吸附、tooltip 文案、空态）全在前端 JS，
+报告 `data/report.html` 里的图表逻辑（聚合口径、单价吸附、tooltip 文案、空态）全在前端 JS，
 pytest 只能断言"HTML 里有这个 id"，真实逻辑过去只能靠打开浏览器肉眼核对。
 本工具在 node 里用最小桩件跑一遍报告内嵌脚本，把这部分变成可重复的检查。
 
@@ -11,7 +11,7 @@ pytest 只能断言"HTML 里有这个 id"，真实逻辑过去只能靠打开浏
 ```bash
 pixi run check-report
 # 或指定报告路径
-node tools/report_check/check.mjs output/report.html
+node tools/report_check/check.mjs data/report.html
 ```
 
 报告需先生成（`pixi run python main.py`，或用 `--no-open` 不弹浏览器）。

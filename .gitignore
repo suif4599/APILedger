@@ -14,8 +14,8 @@ __pycache__/
 .idea/
 .claude/
 
-# user data
+# user data & generated artifacts (report.html 等)
 data/
 
-# runtime output (HTML reports, auto-downloaded echarts)
-output/
+# runtime cache (echarts.min.js 等第三方下载缓存)
+.cache/

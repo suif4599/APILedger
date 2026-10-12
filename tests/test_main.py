@@ -17,8 +17,8 @@ def main_env(tmp_path, import_env, monkeypatch, paratera_xlsx_factory):
 
     db_path = tmp_path / "main.db"
     monkeypatch.setattr(main, "Database", lambda: Database(str(db_path)))
-    out_dir = tmp_path / "output"
-    monkeypatch.setattr(report, "OUTPUT_DIR", str(out_dir))
+    out_dir = tmp_path / "data"
+    monkeypatch.setattr(report, "DATA_DIR", str(out_dir))
     return import_env, paratera_xlsx_factory, out_dir
 
 

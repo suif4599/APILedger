@@ -1,7 +1,7 @@
 /**
  * APILedger - 报告图表 JS 校验
  *
- * 用途: 无需浏览器, 跑一遍 output/report.html 内嵌的图表脚本, 校验"数据口径 /
+ * 用途: 无需浏览器, 跑一遍 data/report.html 内嵌的图表脚本, 校验"数据口径 /
  *       tooltip 文案 / 空态"这类渲染出来看不出、只能靠肉眼的隐性问题。
  *       校验项全部是稳定不变量 (不写死布局数字):
  *         1. 四个图表容器都拿到了 ECharts option (脚本没崩、没改名)
@@ -13,7 +13,7 @@
  *         7. 空态 (无筛选结果 / 全零单价) 不抛异常, 且给出对应的空态提示
  *
  * 用法: pixi run check-report
- *       node tools/report_check/check.mjs <report.html 路径>   (默认 output/report.html)
+ *       node tools/report_check/check.mjs <report.html 路径>   (默认 data/report.html)
  *
  * 依赖: node >= 18 (DOM / ECharts 用最小桩件替代, 不联网)。报告需先由 main.py 生成。
  *
@@ -25,7 +25,7 @@
 
 import fs from 'fs';
 
-const REPORT_PATH = process.argv[2] || 'output/report.html';
+const REPORT_PATH = process.argv[2] || 'data/report.html';
 
 if (!fs.existsSync(REPORT_PATH)) {
   console.error(`[ERROR] 找不到报告文件: ${REPORT_PATH}`);

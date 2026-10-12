@@ -125,8 +125,8 @@ class TestExportReport:
 
     def test_export_default_output_dir(self, seeded_db, tmp_path, monkeypatch):
         import core.report as report
-        out_dir = tmp_path / "output"
-        monkeypatch.setattr(report, "OUTPUT_DIR", str(out_dir))
+        out_dir = tmp_path / "data"
+        monkeypatch.setattr(report, "DATA_DIR", str(out_dir))
         path = export_report(seeded_db)
         assert os.path.basename(path) == "report.html"
         assert os.path.exists(path)
