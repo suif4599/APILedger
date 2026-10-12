@@ -18,6 +18,7 @@ APILedger - API 账单管理工具 (命令行入口)
 
 import argparse
 import os
+import sys
 import webbrowser
 
 import importer
@@ -222,6 +223,11 @@ def open_in_browser(path: str):
 
 
 def main():
+    # Windows 控制台默认多为 GBK, 输出 ¥ 等字符会 UnicodeEncodeError 直接中断收尾提示;
+    # 改为不可编码字符用 ? 顶替 (报告已生成, 不该因一行提示崩掉)
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(errors="replace")
+
     parser = argparse.ArgumentParser(description="APILedger - API 账单管理")
     parser.add_argument("--force", action="store_true", help="有冲突时强制覆盖, 不询问")
     parser.add_argument("--yes", action="store_true", help="有冲突时全部跳过, 不询问")
