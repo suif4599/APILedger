@@ -5,12 +5,12 @@ API 账单数据管理与可视化工具（命令行导入 + 自包含 HTML 报�
 ## 使用说明
 
 1. **放入账单**：将 API 平台的账单文件（`.csv` / `.xlsx`）放入 `data/input/`
-2. **运行主程序**：`python main.py`
+2. **运行主程序**：`pixi run python src/main.py`
    - 自动扫描并导入 `input/` 中的所有账单文件
    - 遇到冲突数据时在终端逐条询问裁决（覆盖 / 跳过 / 中止）
-   - 导入完成自动生成 `output/report.html` 并用浏览器打开
+   - 导入完成自动生成 `data/report.html` 并用浏览器打开
 3. **自动归档**：导入成功的文件自动移至 `data/archive/`
-4. **随时查看报告**：双击 `output/report.html` 即可（单文件自包含，可复制分享，离线可用；导入新数据后重新运行 `main.py` 即会覆盖更新）
+4. **随时查看报告**：双击 `data/report.html` 即可（单文件自包含，可复制分享，离线可用；导入新数据后重新运行主程序即会覆盖更新）
 
 ### 重建数据库
 
@@ -24,7 +24,7 @@ API 账单数据管理与可视化工具（命令行导入 + 自包含 HTML 报�
 
 ### 校验报告图表（开发用）
 
-`pixi run check-report` — 用 node 最小桩件跑一遍 `output/report.html` 内嵌的图表脚本，
+`pixi run check-report` — 用 node 最小桩件跑一遍 `data/report.html` 内嵌的图表脚本，
 校验数据口径 / tooltip 文案 / 空态：均价曲线的点是否落在当日原始单价范围内、
 类型占比是否合计 100.00%、tooltip 是否出现 `undefined`、空态是否抛异常。
 报告需先生成，检查失败退出码为 1。
@@ -115,31 +115,36 @@ API 账单数据管理与可视化工具（命令行导入 + 自包含 HTML 报�
 
 ```text
 APILedger/
-├── core/                   # 核心逻辑层
-│   ├── models.py           # 标准字段定义
-│   ├── presets.py          # 平台预设引擎 (加载/匹配/应用 presets/*.py)
-│   ├── report.py           # HTML 报告生成器 (数据提取 + 模板渲染)
-│   ├── report_template.html# 报告 HTML 模板 (前端筛选/图表/表格)
-│   ├── db.py               # SQLite 数据库操作 (建表/UPSERT/聚合查询)
-│   └── importer.py         # XLSX / CSV 文件扫描、列匹配、导入、归档
-├── presets/                # 平台导入预设 (每平台一个 .py 文件)
+├── src/                        # 全部 Python 源码 (平铺, 无包层级)
+│   ├── paths.py                # 路径解析: 项目根与 data/presets/.cache 各目录
+│   ├── main.py                 # 程序入口 (导入 → 冲突裁决 → 生成报告 → 弹出浏览器)
+│   ├── models.py               # 标准字段定义
+│   ├── presets.py              # 平台预设引擎 (加载/匹配/应用 presets/*.py)
+│   ├── report.py               # HTML 报告生成器 (数据提取 + 模板渲染)
+│   ├── report_template.html    # 报告 HTML 模板 (前端筛选/图表/表格)
+│   ├── db.py                   # SQLite 数据库操作 (建表/UPSERT/聚合查询)
+│   └── importer.py             # XLSX / CSV 文件扫描、列匹配、导入、归档
+├── presets/                    # 平台导入预设 (每平台一个 .py 文件, 属于代码)
 │   ├── deepseek.py
 │   ├── paratera.py
-│   └── _template.py        # 预设模板 (新建平台时复制参考)
-├── tests/                  # pytest 测试套件
-│   └── fixtures/           # 测试用账单样本 (generate_test_data.py 生成)
-├── tools/                  # 开发辅助工具集 (每工具一个目录 + README)
-│   └── report_check/       # 报告图表 JS 校验 (pixi run check-report)
-├── data/                   # 用户数据目录
-│   ├── input/              # 待导入的 XLSX / CSV 文件存放处
-│   ├── archive/            # 已导入文件的归档目录
-│   └── api_ledger.db       # SQLite 数据库文件
-├── output/                 # 报告输出 (report.html + 本地 echarts.min.js)
-├── main.py                 # 程序入口 (导入 → 冲突裁决 → 生成报告 → 弹出浏览器)
-└── pixi.toml               # Pixi 环境配置
+│   └── _template.py            # 预设模板 (新建平台时复制参考)
+├── tests/                      # pytest 测试套件
+│   └── fixtures/               # 测试用账单样本 (generate_test_data.py 生成)
+├── tools/                      # 开发辅助工具集 (每工具一个目录 + README)
+│   └── report_check/           # 报告图表 JS 校验 (pixi run check-report)
+├── dev_notes/                  # 开发文档与踩坑笔记 (本地维护, 不入库)
+├── data/                       # 用户数据与产物 (运行时自动创建, 不入库)
+│   ├── input/                  # 待导入的 XLSX / CSV 文件存放处
+│   ├── archive/                # 已导入文件的归档目录
+│   ├── api_ledger.db           # SQLite 数据库文件
+│   └── report.html             # 生成的报告 (单文件自包含)
+├── .cache/                     # 运行时第三方下载缓存 (echarts.min.js, 不入库)
+├── pyproject.toml              # 项目元数据 + pytest 配置 (不打包发布)
+├── pixi.toml                   # Pixi 环境与任务清单 (依赖唯一来源)
+└── pixi.lock                   # 环境锁文件
 ```
 
-`input/`、`archive/`、`data/`、`output/` 目录均为运行时自动创建，不纳入版本控制。
+`data/`（含 `input/`、`archive/`、数据库、报告）与 `.cache/` 均为运行时自动创建，不纳入版本控制。
 
 ---
 
@@ -173,9 +178,22 @@ APILedger/
 
 ---
 
-## 依赖
+## 依赖与环境
+
+依赖与任务统一在 [pixi.toml](pixi.toml) 中声明（conda-forge），`pyproject.toml` 只放项目元数据与 pytest 配置，不重复声明依赖。
 
 | 包 | 用途 |
 | :---: | ----- |
 | `pandas` | XLSX / CSV 文件读取 |
 | `openpyxl` | XLSX 引擎 (pandas 依赖) |
+| `pytest` | 测试 (`pixi run python -m pytest`) |
+| `nodejs` | 报告图表 JS 校验 (`pixi run check-report`)，仅开发用 |
+
+常用命令：
+
+| 命令 | 作用 |
+| :--- | :--- |
+| `pixi run python src/main.py` | 正常运行（增量导入 + 生成报告） |
+| `pixi run rebuild` | 全量重建数据库（预设规则变更后重算历史数据） |
+| `pixi run python -m pytest` | 跑测试套件 |
+| `pixi run check-report` | 校验报告图表 JS（需先生成报告） |
