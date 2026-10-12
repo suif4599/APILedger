@@ -1,8 +1,10 @@
 """
 APILedger - 测试数据生成脚本
 
-生成多个 xlsx 文件用于测试导入、冲突检测、extra 列等功能。
-运行方式: python test/generate_test_data.py
+生成多个 xlsx / csv 文件输出到本目录, 用于手工验证导入、冲突检测、extra 列、
+GBK 编码、小时账单等场景 (测试套件本身只依赖 test_deepseek.csv)。
+
+运行方式: pixi run python tests/fixtures/generate_test_data.py
 """
 
 import csv

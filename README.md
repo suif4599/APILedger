@@ -126,7 +126,8 @@ APILedger/
 │   ├── deepseek.py
 │   ├── paratera.py
 │   └── _template.py        # 预设模板 (新建平台时复制参考)
-├── test/                   # pytest 测试套件
+├── tests/                  # pytest 测试套件
+│   └── fixtures/           # 测试用账单样本 (generate_test_data.py 生成)
 ├── tools/                  # 开发辅助工具集 (每工具一个目录 + README)
 │   └── report_check/       # 报告图表 JS 校验 (pixi run check-report)
 ├── data/                   # 用户数据目录

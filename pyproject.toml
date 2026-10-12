@@ -18,4 +18,4 @@ where = ["."]
 include = ["core*"]
 
 [tool.pytest.ini_options]
-testpaths = ["test"]
+testpaths = ["tests"]

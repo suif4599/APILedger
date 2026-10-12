@@ -20,8 +20,8 @@ if PROJECT_ROOT not in sys.path:
 from core.db import Database  # noqa: E402
 
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
-# 测试夹具文件 (csv/xlsx) 存放于项目根目录的 test_csv/
-FIXTURE_DIR = os.path.join(os.path.dirname(TEST_DIR), "test_csv")
+# 测试夹具文件 (csv/xlsx) 存放于 tests/fixtures/, 由 fixtures/generate_test_data.py 生成
+FIXTURE_DIR = os.path.join(TEST_DIR, "fixtures")
 
 
 @pytest.fixture
