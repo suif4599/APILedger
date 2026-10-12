@@ -1,11 +1,11 @@
-"""core/importer.py - 文件读取、解析、聚合、两阶段导入、归档"""
+"""src/importer.py - 文件读取、解析、聚合、两阶段导入、归档"""
 
 import os
 
 import pytest
 
 from conftest import make_paratera_row, write_xlsx
-from core.importer import (
+from importer import (
     NoPresetError,
     _is_xlsx_file,
     _merge_by_key,

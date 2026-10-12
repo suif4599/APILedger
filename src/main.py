@@ -3,10 +3,10 @@ APILedger - API 账单管理工具 (命令行入口)
 
 使用流程:
   1. 将 xlsx / csv 账单文件放入 data/input/ 文件夹
-  2. 运行 python main.py
+  2. 运行 pixi run python src/main.py
      - 自动扫描导入 input/ 中的账单文件
      - 遇到冲突数据时在终端逐条询问裁决 (覆盖 / 跳过)
-     - 完成后生成 HTML 报告并自动用浏览器打开
+     - 完成后生成 data/report.html 并自动用浏览器打开
 
 命令行参数:
     --force        冲突全部覆盖, 不询问
@@ -18,22 +18,17 @@ APILedger - API 账单管理工具 (命令行入口)
 
 import argparse
 import os
-import sys
 import webbrowser
 
-PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
-if PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, PROJECT_ROOT)
-
-from core.db import Database
-from core.importer import (
+import importer
+from db import Database
+from importer import (
     scan_input_files,
     process_single_file,
     commit_import,
     NoPresetError,
-    INPUT_DIR,
 )
-from core.report import export_report, unsnapped_price_groups
+from report import export_report, unsnapped_price_groups
 
 
 # ═══════════════════════════════════════════════════
@@ -109,7 +104,7 @@ def run_import(db: Database, mode: str = "ask", dry_run: bool = False) -> dict:
     mode: 'ask' (逐条询问) / 'force' (全部覆盖) / 'skip' (全部跳过)
     返回统计 dict。
     """
-    os.makedirs(INPUT_DIR, exist_ok=True)
+    os.makedirs(importer.INPUT_DIR, exist_ok=True)
     files = scan_input_files()
 
     if not files:

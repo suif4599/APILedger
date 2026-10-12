@@ -1,15 +1,14 @@
 """presets/paratera.py - 配置描述列解析与新旧格式兼容"""
 
-import sys, os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 import pytest
+
+from presets import get_preset_name, load_all_presets
 
 
 @pytest.fixture
 def paratera():
-    from presets import paratera
-    return paratera
+    """走引擎的真实加载路径取平台预设模块 (src/presets.py 是引擎, 同名不要混)"""
+    return next(m for m in load_all_presets() if get_preset_name(m) == "paratera")
 
 
 class TestParseRow:

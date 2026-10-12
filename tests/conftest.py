@@ -1,7 +1,7 @@
 """
 pytest 共享 fixture。
 
-- 将项目根目录加入 sys.path, 使 `import core` / `import ui` 生效
+- 将 src/ 加入 sys.path, 使 `import db` / `import importer` / `import report` 生效
 - db:            临时路径的数据库 (不触碰真实 data/api_ledger.db)
 - import_env:    将 importer 的 input/ 与 archive/ 目录隔离到临时目录
 - xlsx helpers:  构造测试用账单文件
@@ -13,13 +13,15 @@ import sys
 import pandas as pd
 import pytest
 
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, PROJECT_ROOT)
-
-from core.db import Database  # noqa: E402
-
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(TEST_DIR)
+# 源码平铺在 src/ 下 (无包层级), 加入 sys.path 后可直接按模块名 import
+SRC_DIR = os.path.join(PROJECT_ROOT, "src")
+if SRC_DIR not in sys.path:
+    sys.path.insert(0, SRC_DIR)
+
+from db import Database  # noqa: E402
+
 # 测试夹具文件 (csv/xlsx) 存放于 tests/fixtures/, 由 fixtures/generate_test_data.py 生成
 FIXTURE_DIR = os.path.join(TEST_DIR, "fixtures")
 
@@ -39,7 +41,7 @@ def import_env(tmp_path, monkeypatch):
     隔离 importer 的目录常量, 避免测试读写真实 data/input、data/archive。
     返回 (input_dir, archive_dir)。
     """
-    import core.importer as importer
+    import importer
 
     input_dir = tmp_path / "input"
     archive_dir = tmp_path / "archive"

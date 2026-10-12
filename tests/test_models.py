@@ -1,6 +1,6 @@
-"""core/models.py - 标准字段定义"""
+"""src/models.py - 标准字段定义"""
 
-from core.models import STANDARD_FIELDS
+from models import STANDARD_FIELDS
 
 
 def test_standard_fields_complete():

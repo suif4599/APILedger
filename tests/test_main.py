@@ -6,8 +6,8 @@ import os
 import pytest
 
 from conftest import make_paratera_row
-import core.report as report
-from core.db import Database
+import report as report
+from db import Database
 
 
 @pytest.fixture

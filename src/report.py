@@ -15,18 +15,12 @@ import os
 import urllib.request
 from typing import Any, Dict
 
-from core.db import Database
+from db import Database
+from paths import CACHE_DIR, DATA_DIR, ECHARTS_PATH, TEMPLATE_PATH
 
-CORE_DIR = os.path.dirname(os.path.abspath(__file__))
-TEMPLATE_PATH = os.path.join(CORE_DIR, "report_template.html")
-
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-# 报告属于用户数据, 与其他用户数据一起放 data/
-DATA_DIR = os.path.join(BASE_DIR, "data")
+# 报告属于用户数据, 与 input/archive/数据库同放 data/, 固定文件名, 重新生成即覆盖
 REPORT_FILENAME = "report.html"
-# echarts 是运行时下载的第三方缓存, 既不入库也不属于用户数据, 单独放 .cache/
-CACHE_DIR = os.path.join(BASE_DIR, ".cache")
-ECHARTS_PATH = os.path.join(CACHE_DIR, "echarts.min.js")
+
 ECHARTS_CDN = "https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"
 
 # 主题色
@@ -65,7 +59,7 @@ def _collect_official_prices() -> Dict[str, Dict[str, Dict[str, Any]]]:
     价表中该日期生效的官方价相对误差 ≤SNAP_TOLERANCE 时按官方价显示;
     记录平台无价表时回退合并所有平台。
     """
-    from core.presets import load_all_presets, get_pricing_dict, get_preset_name
+    from presets import load_all_presets, get_pricing_dict, get_preset_name
 
     price_keys = ("input_hit", "input_miss", "output")
 

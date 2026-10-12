@@ -13,8 +13,7 @@ import os
 import re
 from typing import Any, Dict, List, Optional
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PRESETS_DIR = os.path.join(BASE_DIR, "presets")
+from paths import PRESETS_DIR
 
 
 # ═══════════════════════════════════════════════════
@@ -50,7 +49,7 @@ def load_all_presets() -> List[Any]:
 
 def _import_module(path: str, name: str):
     """从文件路径导入 Python 模块"""
-    spec = importlib.util.spec_from_file_location(f"presets.{name}", path)
+    spec = importlib.util.spec_from_file_location(f"apiledger_preset.{name}", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod

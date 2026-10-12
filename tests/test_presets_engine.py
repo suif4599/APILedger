@@ -1,9 +1,9 @@
-"""core/presets.py - 预设引擎: 加载、匹配、列映射、表达式、价格匹配"""
+"""src/presets.py - 预设引擎: 加载、匹配、列映射、表达式、价格匹配"""
 
 import pytest
 
-from core import presets
-from core.presets import (
+import presets
+from presets import (
     apply_column_mapping,
     apply_computed_fields,
     compute_field,

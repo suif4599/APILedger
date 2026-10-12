@@ -8,9 +8,10 @@ from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
-from core.models import STANDARD_FIELDS
-from core.db import Database
-from core.presets import (
+from models import STANDARD_FIELDS
+from db import Database
+from paths import INPUT_DIR, ARCHIVE_DIR
+from presets import (
     load_all_presets,
     detect_preset,
     apply_column_mapping,
@@ -19,12 +20,6 @@ from core.presets import (
     get_pricing_dict,
     get_model_map,
 )
-
-# 目录常量
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-INPUT_DIR = os.path.join(BASE_DIR, "data", "input")
-ARCHIVE_DIR = os.path.join(BASE_DIR, "data", "archive")
 
 
 SUPPORTED_EXTENSIONS = (".xlsx", ".csv")

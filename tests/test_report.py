@@ -1,4 +1,4 @@
-"""core/report.py - HTML 报告生成"""
+"""src/report.py - HTML 报告生成"""
 
 import json
 import os
@@ -6,8 +6,8 @@ from unittest import mock
 
 import pytest
 
-from core.db import Database
-from core.report import (
+from db import Database
+from report import (
     CHART_COLORS, CHART_COLORS_DARK, TEMPLATE_PATH, build_html, export_report, unsnapped_price_groups,
 )
 
@@ -124,7 +124,7 @@ class TestExportReport:
             assert "<!DOCTYPE html>" in f.read()
 
     def test_export_default_output_dir(self, seeded_db, tmp_path, monkeypatch):
-        import core.report as report
+        import report as report
         out_dir = tmp_path / "data"
         monkeypatch.setattr(report, "DATA_DIR", str(out_dir))
         path = export_report(seeded_db)
@@ -140,33 +140,33 @@ class TestOfficialPrices:
         return types.SimpleNamespace(PRICING=pricing, DEFAULTS={"platform": platform})
 
     def test_collect_groups_by_platform(self, monkeypatch):
-        import core.report as report
+        import report as report
         pricing = {"GLM-5": {"history": [
             {"until": "2026-08-31", "input_hit": 1.0, "input_miss": 3.0, "output": 9.0},
             {"until": "2099-12-31", "input_hit": 1.2, "input_miss": 3.5, "output": 10.0},
         ]}}
-        monkeypatch.setattr("core.presets.load_all_presets",
+        monkeypatch.setattr("presets.load_all_presets",
                             lambda: [self._fake_preset(pricing, "Paratera")])
         prices = report._collect_official_prices()
         assert prices["GLM-5"]["Paratera"]["history"] == pricing["GLM-5"]["history"]
 
     def test_collect_old_format_keeps_platform(self, monkeypatch):
-        import core.report as report
+        import report as report
         pricing = {"Paratera": {"GLM-5": {"input_miss": 3.0, "output": 9.0}}}
-        monkeypatch.setattr("core.presets.load_all_presets",
+        monkeypatch.setattr("presets.load_all_presets",
                             lambda: [self._fake_preset(pricing)])
         prices = report._collect_official_prices()
         assert prices["GLM-5"]["Paratera"] == {"input_miss": 3.0, "output": 9.0}
 
     def test_pricing_embedded_in_html(self, seeded_db, monkeypatch):
-        import core.report as report
+        import report as report
         monkeypatch.setattr(report, "_collect_official_prices",
                             lambda: {"GLM-5": {"Paratera": {"input_miss": 3.0, "output": 9.0}}})
         data = json.loads(_extract_data(build_html(seeded_db)))
         assert data["pricing"]["GLM-5"]["Paratera"]["output"] == 9.0
 
     def test_empty_pricing_still_embeds(self, seeded_db, monkeypatch):
-        import core.report as report
+        import report as report
         monkeypatch.setattr(report, "_collect_official_prices", lambda: {})
         data = json.loads(_extract_data(build_html(seeded_db)))
         assert data["pricing"] == {}
@@ -184,7 +184,7 @@ class TestUnsnappedPrices:
     """终端未吸附提示: unsnapped_price_groups 与前端 snapUnitPrice 同判定"""
 
     def _patch(self, monkeypatch, pricing):
-        monkeypatch.setattr("core.report._collect_official_prices", lambda: pricing)
+        monkeypatch.setattr("report._collect_official_prices", lambda: pricing)
 
     def test_zero_price_rows_ignored(self, monkeypatch):
         # 零单价行不展示单价, 不参与提示

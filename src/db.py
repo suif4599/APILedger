@@ -17,9 +17,7 @@ import re
 import sqlite3
 from typing import Any, Dict, List, Optional, Tuple
 
-# 数据库文件路径 (项目根目录 / data / api_ledger.db)
-DB_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
-DB_PATH = os.path.join(DB_DIR, "api_ledger.db")
+from paths import DB_PATH
 
 # ── 建表 SQL ─────────────────────────────────────
 

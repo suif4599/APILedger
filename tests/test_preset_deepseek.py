@@ -1,17 +1,14 @@
 """presets/deepseek.py - 日期转换、调用量跳过、COMPUTED 字段"""
 
-import sys, os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 import pytest
 
-from core.presets import apply_computed_fields
+from presets import apply_computed_fields, get_preset_name, load_all_presets
 
 
 @pytest.fixture
 def deepseek():
-    from presets import deepseek
-    return deepseek
+    """走引擎的真实加载路径取平台预设模块 (src/presets.py 是引擎, 同名不要混)"""
+    return next(m for m in load_all_presets() if get_preset_name(m) == "deepseek")
 
 
 class TestParseRow:

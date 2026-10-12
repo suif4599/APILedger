@@ -1,8 +1,8 @@
-"""core/db.py - 数据库: 贡献明细、冲突检测、聚合、查询"""
+"""src/db.py - 数据库: 贡献明细、冲突检测、聚合、查询"""
 
 import pytest
 
-from core.db import Database, _record_key, parse_file_date_range, ranges_overlap
+from db import Database, _record_key, parse_file_date_range, ranges_overlap
 
 
 def make_row(date="2026-08-01", platform="Paratera", project="vscode",
