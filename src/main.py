@@ -3,14 +3,15 @@ APILedger - API 账单管理工具 (命令行入口)
 
 使用流程:
   1. 将 xlsx / csv 账单文件放入 data/input/ 文件夹
-  2. 运行 pixi run python src/main.py
+  2. 运行 pixi run start (等价于 pixi run python src/main.py)
      - 自动扫描导入 input/ 中的账单文件
-     - 遇到冲突数据时在终端逐条询问裁决 (覆盖 / 跳过)
+     - 同平台、文件名日期区段重叠的旧账单被新账单替换 (互补数据累加)
      - 完成后生成 data/report.html 并自动用浏览器打开
 
 命令行参数:
-    --force        冲突全部覆盖, 不询问
-    --yes          冲突全部跳过, 不询问 (非交互, 适合脚本)
+    --legacy       走旧的冲突裁决流程 (逐条询问覆盖 / 跳过)
+    --force        冲突全部覆盖, 不询问 (仅 --legacy 下生效)
+    --yes          冲突全部跳过, 不询问 (仅 --legacy 下生效, 适合脚本)
     --dry-run      仅检测, 不写入不归档
     --no-report    只导入, 不生成报告
     --no-open      生成报告但不弹出浏览器
@@ -26,6 +27,7 @@ from db import Database
 from importer import (
     scan_input_files,
     process_single_file,
+    process_single_file_replace,
     commit_import,
     NoPresetError,
 )
@@ -95,10 +97,70 @@ def ask_conflicts(conflicts: list, filename: str) -> tuple:
 
 
 # ═══════════════════════════════════════════════════
-# 导入流程
+# 导入流程 (默认: 新账单替换重叠旧账单)
 # ═══════════════════════════════════════════════════
 
-def run_import(db: Database, mode: str = "ask", dry_run: bool = False) -> dict:
+def run_import_replace(db: Database, dry_run: bool = False) -> dict:
+    """
+    扫描 input/ 目录, 按"新账单替换旧账单"方式导入所有文件。
+
+    每个文件: 同平台、文件名日期区段重叠的旧账单被替换; 区段不重叠的累加。
+    返回统计 dict。
+    """
+    os.makedirs(importer.INPUT_DIR, exist_ok=True)
+    files = scan_input_files()
+
+    if not files:
+        print("input/ 目录中没有待导入文件。")
+        return {"files": 0, "records": 0, "replaced": 0, "errors": 0}
+
+    print(f"发现 {len(files)} 个待导入文件 (同平台日期重叠的旧账单将被替换)\n")
+
+    stats = {"files": len(files), "records": 0, "replaced": 0, "errors": 0}
+
+    for fpath in files:
+        fname = os.path.basename(fpath)
+        try:
+            res = process_single_file_replace(db, fpath, dry_run=dry_run)
+        except NoPresetError as e:
+            print(f"\n  [跳过] {fname}: 无匹配预设")
+            for line in str(e).splitlines():
+                print(f"      {line.strip()}")
+            print()
+            stats["errors"] += 1
+            continue
+        except Exception as e:
+            print(f"  [错误] {fname}: {e}\n")
+            stats["errors"] += 1
+            continue
+
+        stats["records"] += res["records"]
+        stats["replaced"] += len(res["replaced"])
+
+        if not dry_run:
+            print(f"  已写入 {res['written']} 条, 文件已归档\n")
+
+    _print_import_summary(stats, dry_run)
+    return stats
+
+
+def _print_import_summary(stats: dict, dry_run: bool) -> None:
+    """替换模式导入汇总"""
+    print("=" * 50)
+    parts = [f"处理 {stats['files']} 个文件", f"写入 {stats['records']} 条"]
+    if stats["replaced"] > 0:
+        parts.append(f"替换旧账单 {stats['replaced']} 个")
+    if stats["errors"] > 0:
+        parts.append(f"{stats['errors']} 个文件出错")
+    suffix = " (dry-run, 未写入未归档)" if dry_run else ""
+    print(f"导入完成: {' | '.join(parts)}{suffix}")
+
+
+# ═══════════════════════════════════════════════════
+# 导入流程 (旧: 冲突裁决, --legacy)
+# ═══════════════════════════════════════════════════
+
+def run_import_legacy(db: Database, mode: str = "ask", dry_run: bool = False) -> dict:
     """
     扫描 input/ 目录并导入所有文件。
 
@@ -229,8 +291,10 @@ def main():
         sys.stdout.reconfigure(errors="replace")
 
     parser = argparse.ArgumentParser(description="APILedger - API 账单管理")
-    parser.add_argument("--force", action="store_true", help="有冲突时强制覆盖, 不询问")
-    parser.add_argument("--yes", action="store_true", help="有冲突时全部跳过, 不询问")
+    parser.add_argument("--legacy", action="store_true",
+                        help="走旧的冲突裁决流程 (逐条询问覆盖 / 跳过)")
+    parser.add_argument("--force", action="store_true", help="有冲突时强制覆盖, 不询问 (仅 --legacy)")
+    parser.add_argument("--yes", action="store_true", help="有冲突时全部跳过, 不询问 (仅 --legacy)")
     parser.add_argument("--dry-run", action="store_true", help="仅检测, 不写入不归档")
     parser.add_argument("--no-report", action="store_true", help="只导入, 不生成报告")
     parser.add_argument("--no-open", action="store_true", help="生成报告但不弹出浏览器")
@@ -242,14 +306,19 @@ def main():
     db = Database()
     db.connect()
     try:
-        if args.force:
-            mode = "force"
-        elif args.yes:
-            mode = "skip"
+        if args.legacy:
+            if args.force:
+                mode = "force"
+            elif args.yes:
+                mode = "skip"
+            else:
+                mode = "ask"
+            run_import_legacy(db, mode=mode, dry_run=args.dry_run)
         else:
-            mode = "ask"
-
-        run_import(db, mode=mode, dry_run=args.dry_run)
+            if args.force or args.yes:
+                print("提示: --force / --yes 仅在 --legacy 下生效, 本次已忽略"
+                      " (默认流程为替换重叠旧账单)")
+            run_import_replace(db, dry_run=args.dry_run)
 
         if not args.dry_run and not args.no_report:
             path = export_report(db)

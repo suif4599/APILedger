@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 
 from models import STANDARD_FIELDS
-from db import Database
+from db import Database, parse_file_date_range
 from paths import INPUT_DIR, ARCHIVE_DIR
 from presets import (
     load_all_presets,
@@ -383,6 +383,72 @@ def archive_file(filepath: str) -> str:
     dest = os.path.join(ARCHIVE_DIR, dest_name)
     shutil.move(filepath, dest)
     return dest_name
+
+
+def process_single_file_replace(
+    db: Database, filepath: str, dry_run: bool = False
+) -> Dict[str, Any]:
+    """
+    单文件导入 (替换模式): 新账单替换同平台、日期范围重叠的旧账单。
+
+    流程:
+      解析文件 → 取平台集合 + 文件名日期区段 → 查同平台下日期范围重叠的旧账单
+      → 打印将替换的清单
+      → 非 dry_run 时先 delete_sources 再 upsert_batch, 最后归档
+
+    互补数据 (同平台但文件名日期区段不重叠) 不受影响, 保持累加。
+    同一文件重复导入时, 其旧贡献先删后写, 结果幂等。
+
+    返回:
+    {
+        "filename":   str,
+        "platforms":  List[str],
+        "date_range": (起, 止) | None,
+        "replaced":   List[str],   # 被替换的旧账单文件名
+        "records":    int,         # 本次解析出的记录数
+        "deleted":    int,         # 删除的贡献明细行数
+        "written":    int,         # 写入的记录数
+    }
+    """
+    filename = os.path.basename(filepath)
+    records = parse_records_from_file(filepath)
+
+    if not records:
+        if not dry_run:
+            archive_file(filepath)
+        return {
+            "filename": filename, "platforms": [], "date_range": None,
+            "replaced": [], "records": 0, "deleted": 0, "written": 0,
+        }
+
+    platforms = sorted({r.get("platform", "") for r in records if r.get("platform")})
+    new_range = parse_file_date_range(filename)
+
+    replaced = db.find_overlapping_source_files(platforms, new_range)
+
+    rng = f"{new_range[0]} ~ {new_range[1]}" if new_range else "未知 (文件名无日期)"
+    print(f"     范围: 平台 {', '.join(platforms) or '(未指定)'} | 日期 {rng}", flush=True)
+    if replaced:
+        print(f"     替换旧账单 {len(replaced)} 个: {', '.join(replaced)}", flush=True)
+    else:
+        print("     未发现重叠账单, 数据累加", flush=True)
+
+    if dry_run:
+        print("     (dry-run 模式, 跳过替换/写入/归档)", flush=True)
+        return {
+            "filename": filename, "platforms": platforms, "date_range": new_range,
+            "replaced": replaced, "records": len(records), "deleted": 0, "written": 0,
+        }
+
+    deleted = db.delete_sources(replaced)
+    written = db.upsert_batch(records)
+    archive_file(filepath)
+
+    return {
+        "filename": filename, "platforms": platforms, "date_range": new_range,
+        "replaced": replaced, "records": len(records),
+        "deleted": deleted, "written": written,
+    }
 
 
 def process_single_file(

@@ -1,4 +1,4 @@
-"""src/importer.py - 文件读取、解析、聚合、两阶段导入、归档"""
+"""src/importer.py - 文件读取、解析、聚合、导入 (替换 / 两阶段)、归档"""
 
 import os
 
@@ -13,6 +13,7 @@ from importer import (
     commit_import,
     parse_records_from_file,
     process_single_file,
+    process_single_file_replace,
     read_csv,
     read_xlsx,
     scan_input_files,
@@ -155,7 +156,149 @@ class TestPostProcess:
         assert records[0]["type"] == "输入(缓存未命中)"
 
 
-# ── 两阶段导入 (端到端) ───────────────────────────────
+# ── 替换导入 (端到端) ─────────────────────────────────
+
+class TestReplaceImport:
+    def test_first_import(self, db, import_env, paratera_xlsx_factory):
+        p = paratera_xlsx_factory(
+            "paratera_2026-08-01_2026-08-31.csv",
+            [make_paratera_row(model="GLM-5", desc="输入:1,000tokens", cost=0.5)],
+        )
+        res = process_single_file_replace(db, p)
+        assert res["platforms"] == ["Paratera"]
+        assert res["date_range"] == ("2026-08-01", "2026-08-31")
+        assert res["replaced"] == [] and res["deleted"] == 0
+        assert res["written"] == 1
+        assert not os.path.exists(p)  # 已归档
+
+        rows, _ = db.query()
+        assert rows[0]["tokens"] == 1000
+
+    def test_overlapping_file_replaced(self, db, import_env, paratera_xlsx_factory, capsys):
+        """区段重叠的新账单替换旧账单, 数值以新账单为准"""
+        old = paratera_xlsx_factory(
+            "paratera_2026-08-01_2026-08-31.csv",
+            [make_paratera_row(model="GLM-5", desc="输入:1,000tokens", cost=0.5)],
+        )
+        process_single_file_replace(db, old)
+
+        new = paratera_xlsx_factory(
+            "paratera_2026-08-15_2026-08-31.csv",
+            [make_paratera_row(model="GLM-5", desc="输入:9,999tokens", cost=9.9)],
+        )
+        res = process_single_file_replace(db, new)
+        out = capsys.readouterr().out
+        assert "替换旧账单 1 个: paratera_2026-08-01_2026-08-31.csv" in out
+        assert res["replaced"] == ["paratera_2026-08-01_2026-08-31.csv"]
+        assert res["deleted"] == 1
+
+        rows, total = db.query()
+        assert total == 1                          # 旧聚合行被替换, 无残留空行
+        assert rows[0]["tokens"] == 9999
+        assert rows[0]["cost"] == pytest.approx(9.9)
+        assert rows[0]["source_file"] == "paratera_2026-08-15_2026-08-31.csv"
+
+    def test_disjoint_file_accumulates(self, db, import_env, paratera_xlsx_factory, capsys):
+        """区段不重叠 → 不替换, 数据累加"""
+        aug = paratera_xlsx_factory(
+            "paratera_2026-08-01_2026-08-31.csv",
+            [make_paratera_row(model="GLM-5", desc="输入:1,000tokens",
+                               bill_start="2026-08-31 10:00:00", cost=0.5)],
+        )
+        process_single_file_replace(db, aug)
+
+        sep = paratera_xlsx_factory(
+            "paratera_2026-09-01_2026-09-30.csv",
+            [make_paratera_row(model="GLM-5", desc="输入:2,000tokens",
+                               bill_start="2026-08-31 20:00:00", cost=1.0)],
+        )
+        res = process_single_file_replace(db, sep)
+        out = capsys.readouterr().out
+        assert "未发现重叠账单, 数据累加" in out
+        assert res["replaced"] == [] and res["deleted"] == 0
+
+        rows, _ = db.query()
+        assert rows[0]["tokens"] == 3000           # 两天同 key 累加
+        assert rows[0]["cost"] == pytest.approx(1.5)
+
+    def test_other_platform_untouched(self, db, import_env, paratera_xlsx_factory):
+        """同日期区段的其他平台账单不受影响"""
+        import shutil
+
+        from conftest import FIXTURE_DIR
+        input_dir, _ = import_env
+        ds = os.path.join(input_dir, "deepseek_2026-06-01_2026-07-01.csv")
+        shutil.copy(os.path.join(FIXTURE_DIR, "test_deepseek.csv"), ds)
+        process_single_file_replace(db, ds)
+
+        n_before = db.query()[1]
+        assert n_before > 0
+
+        # paratera 账单日期区段与 deepseek 重叠, 但不该动 deepseek 的数据
+        p = paratera_xlsx_factory(
+            "paratera_2026-06-01_2026-07-01.csv",
+            [make_paratera_row(desc="输入:1,000tokens", cost=0.5)],
+        )
+        res = process_single_file_replace(db, p)
+        assert res["replaced"] == []
+        assert db.query()[1] == n_before + 1
+
+    def test_rerun_same_file_idempotent(self, db, import_env, paratera_xlsx_factory):
+        """同一账单连跑两次 → 幂等, 数值不变"""
+        rows = [make_paratera_row(model="GLM-5", desc="输入:1,000tokens", cost=0.5)]
+
+        p = paratera_xlsx_factory("paratera_2026-08-01_2026-08-31.csv", rows)
+        process_single_file_replace(db, p)
+        first = db.query()[0]
+
+        p2 = paratera_xlsx_factory("paratera_2026-08-01_2026-08-31.csv", rows)
+        res = process_single_file_replace(db, p2)
+        assert res["replaced"] == ["paratera_2026-08-01_2026-08-31.csv"]
+
+        second = db.query()[0]
+        assert db.query()[1] == 1
+        assert second[0]["tokens"] == first[0]["tokens"]
+        assert second[0]["cost"] == pytest.approx(first[0]["cost"])
+        assert second[0]["source_file"] == "paratera_2026-08-01_2026-08-31.csv"
+
+    def test_dry_run_touches_nothing(self, db, import_env, paratera_xlsx_factory, capsys):
+        old = paratera_xlsx_factory(
+            "paratera_2026-08-01_2026-08-31.csv",
+            [make_paratera_row(model="GLM-5", desc="输入:1,000tokens", cost=0.5)],
+        )
+        process_single_file_replace(db, old)
+
+        new = paratera_xlsx_factory(
+            "paratera_2026-08-15_2026-08-31.csv",
+            [make_paratera_row(model="GLM-5", desc="输入:9,999tokens", cost=9.9)],
+        )
+        res = process_single_file_replace(db, new, dry_run=True)
+        out = capsys.readouterr().out
+        assert "dry-run" in out
+        assert res["replaced"] == ["paratera_2026-08-01_2026-08-31.csv"]
+        assert res["deleted"] == 0 and res["written"] == 0
+        assert db.query()[0][0]["tokens"] == 1000   # 未写入
+        assert os.path.exists(new)                  # 未归档
+
+    def test_unknown_preset_rejected(self, db, import_env, tmp_path):
+        p = str(tmp_path / "unknown_bill_2026-08-01_2026-08-31.csv")
+        with open(p, "w", encoding="utf-8") as f:
+            f.write("foo,bar\n1,2\n")
+        with pytest.raises(NoPresetError):
+            process_single_file_replace(db, p)
+
+    def test_empty_file_archived(self, db, import_env):
+        input_dir, archive_dir = import_env
+        p = os.path.join(input_dir, "paratera_empty_2026-08-01.csv")
+        with open(p, "w", encoding="utf-8") as f:
+            f.write("模型,配置描述,费用(元)\n")
+        res = process_single_file_replace(db, p)
+        assert res["records"] == 0 and res["written"] == 0
+        assert not os.path.exists(p)
+        assert os.path.exists(os.path.join(archive_dir, "paratera_empty_2026-08-01.csv"))
+
+
+# ── 两阶段导入 (端到端, --legacy) ──────────────────────
 
 class TestTwoPhaseImport:
     def test_new_then_idempotent(self, db, import_env, tmp_path):
