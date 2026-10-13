@@ -222,6 +222,113 @@ class TestCheckConflicts:
         assert len(res["new"]) == 1
 
 
+# ── 替换导入: 查重叠旧账单 + 删除 ─────────────────────
+
+class TestFindOverlappingSourceFiles:
+    def test_no_sources(self, db):
+        assert db.find_overlapping_source_files("Paratera", ("2026-08-01", "2026-08-31")) == []
+
+    def test_overlapping_found(self, db):
+        db.upsert_batch([make_row(source_file="paratera_2026-08-01_2026-08-31.csv")])
+        assert db.find_overlapping_source_files(
+            "Paratera", ("2026-08-15", "2026-08-31")
+        ) == ["paratera_2026-08-01_2026-08-31.csv"]
+
+    def test_disjoint_not_found(self, db):
+        db.upsert_batch([make_row(source_file="paratera_2026-07-01_2026-07-31.csv")])
+        assert db.find_overlapping_source_files(
+            "Paratera", ("2026-08-01", "2026-08-31")
+        ) == []
+
+    def test_other_platform_not_found(self, db):
+        """同日期区段但不同平台 → 不替换"""
+        db.upsert_batch([make_row(platform="DeepSeek",
+                                  source_file="deepseek_2026-08-01_2026-08-31.csv")])
+        assert db.find_overlapping_source_files(
+            "Paratera", ("2026-08-01", "2026-08-31")
+        ) == []
+
+    def test_platform_iterable_scopes_to_all_given(self, db):
+        db.upsert_batch([
+            make_row(platform="Paratera", source_file="paratera_2026-08-01_2026-08-31.csv"),
+            make_row(platform="DeepSeek", source_file="deepseek_2026-08-01_2026-08-31.csv"),
+            make_row(platform="GLM", source_file="glm_2026-08-01_2026-08-31.csv"),
+        ])
+        assert db.find_overlapping_source_files(
+            ["Paratera", "DeepSeek"], ("2026-08-01", "2026-08-31")
+        ) == ["deepseek_2026-08-01_2026-08-31.csv", "paratera_2026-08-01_2026-08-31.csv"]
+
+    def test_unknown_new_range_replaces_all(self, db):
+        """新文件名无日期 → 保守视为重叠, 同平台旧账单全部返回"""
+        db.upsert_batch([
+            make_row(source_file="paratera_2026-07-01_2026-07-31.csv"),
+            make_row(source_file="paratera_2026-08-01_2026-08-31.csv"),
+        ])
+        assert len(db.find_overlapping_source_files("Paratera", None)) == 2
+
+    def test_unknown_old_range_replaces(self, db):
+        """旧文件名无日期 → 保守视为重叠"""
+        db.upsert_batch([make_row(source_file="legacy_bill.csv")])
+        assert db.find_overlapping_source_files(
+            "Paratera", ("2026-08-01", "2026-08-31")
+        ) == ["legacy_bill.csv"]
+
+    def test_empty_platform_means_unscoped(self, db):
+        db.upsert_batch([make_row(source_file="paratera_2026-08-01_2026-08-31.csv")])
+        assert db.find_overlapping_source_files(
+            [], ("2026-08-01", "2026-08-31")
+        ) == ["paratera_2026-08-01_2026-08-31.csv"]
+
+    def test_empty_name_ignored(self, db):
+        db.upsert_batch([make_row(source_file="")])
+        assert db.find_overlapping_source_files("Paratera", None) == []
+
+
+class TestDeleteSources:
+    def test_delete_removes_rows_and_aggregate(self, db):
+        """唯一来源被删除 → 聚合行一并删除 (不留 tokens=0 空行)"""
+        db.upsert_batch([make_row(source_file="a_2026-08-01_2026-08-31.csv")])
+        assert db.delete_sources(["a_2026-08-01_2026-08-31.csv"]) == 1
+
+        _, total = db.query()
+        assert total == 0
+        assert db.conn.execute("SELECT COUNT(*) FROM record_sources").fetchone()[0] == 0
+
+    def test_delete_one_of_two_contributions(self, db):
+        """互补数据: 删除一个来源后聚合行按剩余贡献重算"""
+        db.upsert_batch([
+            make_row(tokens=100, cost=1.0, source_file="a_2026-08-01_2026-08-10.csv"),
+            make_row(tokens=50, cost=0.5, source_file="b_2026-08-11_2026-08-20.csv"),
+        ])
+        db.delete_sources(["a_2026-08-01_2026-08-10.csv"])
+
+        rows, total = db.query()
+        assert total == 1
+        assert rows[0]["tokens"] == 50
+        assert rows[0]["cost"] == pytest.approx(0.5)
+        assert rows[0]["source_file"] == "b_2026-08-11_2026-08-20.csv"
+
+    def test_multi_key_and_multi_file(self, db):
+        db.upsert_batch([
+            make_row(source_file="a.csv"),
+            make_row(model="GLM-5-Pro", source_file="a.csv"),
+            make_row(model="Kimi-K2.5", source_file="b.csv"),
+        ])
+        assert db.delete_sources(["a.csv", "b.csv"]) == 3
+        assert db.query()[1] == 0
+
+    def test_empty_input_noop(self, db):
+        db.upsert_batch([make_row(source_file="a.csv")])
+        assert db.delete_sources([]) == 0
+        assert db.delete_sources(None) == 0
+        assert db.query()[1] == 1
+
+    def test_unknown_file_noop(self, db):
+        db.upsert_batch([make_row(source_file="a.csv")])
+        assert db.delete_sources(["nope.csv"]) == 0
+        assert db.query()[1] == 1
+
+
 # ── 查询与聚合 ────────────────────────────────────────
 
 class TestQuery:

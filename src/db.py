@@ -9,7 +9,9 @@ APILedger - SQLite 数据库管理
   record_sources  贡献明细表, 每 (key, source_file) 一行, 记录每个账单文件
                   对该 key 的贡献。同 key 跨文件时:
                     - 文件名时间区段不重叠 → 互补数据, 贡献累加
-                    - 文件名时间区段重叠   → 重复数据, 视为冲突交用户裁决
+                    - 文件名时间区段重叠   → 重复数据, 默认流程为替换
+                      (delete_sources 删旧账单再写新账单), --legacy 下则
+                      视为冲突交用户裁决 (check_conflicts / replace_keys_batch)
 """
 
 import os
@@ -114,6 +116,15 @@ def ranges_overlap(
     if a is None or b is None:
         return True
     return a[0] <= b[1] and b[0] <= a[1]
+
+
+def _normalize_str_list(values: Any) -> List[str]:
+    """归一化为去空去重的字符串列表 (接受 str 或任意可迭代)"""
+    if values is None:
+        return []
+    if isinstance(values, str):
+        values = [values]
+    return [v for v in dict.fromkeys(values) if v]
 
 
 class Database:
@@ -347,17 +358,98 @@ class Database:
         self.conn.commit()
         return len(records)
 
-    def _refresh_aggregate(self, cur: sqlite3.Cursor, key: tuple):
-        """按贡献明细重算某 key 的聚合行"""
+    # ═══════════════════════════════════════════════
+    # 替换导入 (新账单替换重叠的旧账单)
+    # ═══════════════════════════════════════════════
+
+    def find_overlapping_source_files(
+        self,
+        platforms: Any,
+        new_range: Optional[Tuple[str, str]],
+    ) -> List[str]:
+        """
+        查出与本次新账单重叠的旧账单文件名 (用于替换前清理)。
+
+        重叠判定同 check_conflicts: 按文件名时间区段, 区段未知时保守视为重叠。
+
+        参数:
+          platforms: 本次新账单涉及的平台 (str 或可迭代); 为空表示不限制平台
+          new_range: 本次新账单文件名的日期区段 (见 parse_file_date_range)
+
+        返回: 重叠的 source_file 列表 (去重, 按文件名排序)
+        """
+        plats = _normalize_str_list(platforms)
+        sql = "SELECT DISTINCT source_file FROM record_sources WHERE source_file != ''"
+        params: List[Any] = []
+        if plats:
+            sql += f" AND platform IN ({','.join('?' * len(plats))})"
+            params.extend(plats)
+        sql += " ORDER BY source_file"
+
+        cur = self.conn.cursor()
+        cur.execute(sql, params)
+        return [
+            r[0]
+            for r in cur.fetchall()
+            if ranges_overlap(new_range, parse_file_date_range(r[0]))
+        ]
+
+    def delete_sources(self, source_files: Any) -> int:
+        """
+        删除指定账单文件的全部贡献明细, 并重算受影响的聚合行。
+        聚合行已无任何贡献时由 _refresh_aggregate 一并删除。
+
+        返回删除的贡献明细行数。
+        """
+        files = _normalize_str_list(source_files)
+        if not files:
+            return 0
+
+        cur = self.conn.cursor()
+        placeholders = ",".join("?" * len(files))
         cur.execute(
-            """SELECT SUM(tokens), SUM(cost), MAX(unit_price),
+            f"""SELECT DISTINCT date, platform, project, model, type
+                FROM record_sources WHERE source_file IN ({placeholders})""",
+            files,
+        )
+        keys = [tuple(r) for r in cur.fetchall()]
+
+        cur.execute(
+            f"DELETE FROM record_sources WHERE source_file IN ({placeholders})",
+            files,
+        )
+        deleted = cur.rowcount
+
+        for key in keys:
+            self._refresh_aggregate(cur, key)
+
+        self.conn.commit()
+        return deleted
+
+    def _refresh_aggregate(self, cur: sqlite3.Cursor, key: tuple):
+        """
+        按贡献明细重算某 key 的聚合行。
+        该 key 已无任何贡献明细时删除聚合行, 避免残留 tokens=0 的空行。
+        """
+        cur.execute(
+            """SELECT COUNT(*), SUM(tokens), SUM(cost), MAX(unit_price),
                       GROUP_CONCAT(DISTINCT source_file)
                FROM record_sources
                WHERE date = ? AND platform = ? AND project = ?
                  AND model = ? AND type = ?""",
             key,
         )
-        total_tokens, total_cost, max_price, files = cur.fetchone()
+        count, total_tokens, total_cost, max_price, files = cur.fetchone()
+
+        if not count:
+            cur.execute(
+                """DELETE FROM api_records
+                   WHERE date = ? AND platform = ? AND project = ?
+                     AND model = ? AND type = ?""",
+                key,
+            )
+            return
+
         total_tokens = int(total_tokens or 0)
         total_cost = float(total_cost or 0.0)
 
