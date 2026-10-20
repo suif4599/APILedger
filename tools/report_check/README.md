@@ -2,24 +2,25 @@
 
 ## 用途
 
-报告 `data/report.html` 里的图表逻辑（聚合口径、单价吸附、tooltip 文案、空态）全在前端 JS，
-pytest 只能断言"HTML 里有这个 id"，真实逻辑过去只能靠打开浏览器肉眼核对。
+报告 `data/report.html` 里的图表逻辑（聚合口径、均价、tooltip 文案、空态）全在前端 JS，
+测试只能断言"HTML 里有这个 id"，真实逻辑过去只能靠打开浏览器肉眼核对。
 本工具在 node 里用最小桩件跑一遍报告内嵌脚本，把这部分变成可重复的检查。
 
 ## 运行
 
 ```bash
-pixi run check-report
+# 默认读取当前目录下的 data/report.html
+node tools/report_check/check.mjs
 # 或指定报告路径
-node tools/report_check/check.mjs data/report.html
+node tools/report_check/check.mjs ~/.local/share/apiledger/data/report.html
 ```
 
-报告需先生成（`pixi run python main.py`，或用 `--no-open` 不弹浏览器）。
+报告需先生成（`apiledger <zip> -o data/report.html` 不弹浏览器）。
 找不到报告时退出码 2，检查失败时退出码 1，全部通过退出码 0。
 
 ## 依赖
 
-- `node >= 18`（见 `pixi.toml` 的 `nodejs`）
+- `node >= 18`（flake devShell 已包含）
 - 不联网、不需要浏览器：DOM 与 ECharts 用桩件替代
 
 ## 检查项
@@ -32,7 +33,7 @@ node tools/report_check/check.mjs data/report.html
 3. 切到暗色后四图用暗色主题重建（主题在 `init` 时绑定，必须销毁重建）、主题选择落到
    `<html data-theme>` 并写进 `localStorage`；均价曲线改用暗色系列配色、图例文字色不写死、
    option 里不残留浅色硬编码
-4. 均价曲线每个点都落在当日该模型原始单价范围内（±5% 吸附容差）—— 均价口径错了会在这里暴露
+4. 均价曲线每个点都落在当日该模型原始单价范围内（加权均价）—— 均价口径错了会在这里暴露
 5. 均价 tooltip 的类型占比合计 100.00% 且保留 2 位小数
 6. 各图表 tooltip 文案不含 `undefined` / `NaN`
 7. 空态（筛选无结果 / 记录全无单价）不抛异常，且给出对应空态提示

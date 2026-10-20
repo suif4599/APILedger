@@ -1,217 +1,225 @@
 # APILedger
 
-API 账单数据管理与可视化工具（命令行导入 + 自包含 HTML 报告）。
+API bill ledger CLI: import a zip archive of platform bills, store everything in SQLite, and generate a self-contained HTML report that opens in your browser.
 
-## 使用说明
+## Installation
 
-1. **放入账单**：将 API 平台的账单文件（`.csv` / `.xlsx`）放入 `data/input/`
-2. **运行主程序**：`pixi run start`（等价于 `pixi run python src/main.py`）
-   - 自动扫描并导入 `input/` 中的所有账单文件
-   - **新账单替换旧账单**：同平台、文件名日期区段重叠的旧账单被本次新账单替换（重导出、补发、修正过的账单直接放进来即可，无需手工清理）
-   - 同平台但日期区段不重叠的账单视为互补数据，正常累加
-   - 导入完成自动生成 `data/report.html` 并用浏览器打开
-3. **自动归档**：导入成功的文件自动移至 `data/archive/`
-4. **随时查看报告**：双击 `data/report.html` 即可（单文件自包含，可复制分享，离线可用；导入新数据后重新运行主程序即会覆盖更新）
+### 1. Add the input to your flake
 
-### 导入规则（替换模式）
-
-以文件名中的日期区段（`平台_YYYY-MM-DD_YYYY-MM-DD.csv`）判断新旧账单是否重叠：
-
-| 情况 | 行为 |
-| :--- | :--- |
-| 首次导入 | 直接写入 |
-| 同平台、区段**重叠** | 删除旧账单的全部贡献明细，以新账单为准 |
-| 同平台、区段**不重叠** | 互补数据，贡献累加 |
-| 其他平台、区段重叠 | 互不影响（按平台隔离） |
-| 文件名无日期 | 保守处理：视为与该平台全部旧账单重叠（日志会列出被替换清单） |
-
-同一份账单连跑两次是幂等的（旧贡献先删后写，数值不变）。
-`--dry-run` 可先看一遍「将替换哪些旧账单」而不落库。
-
-### 重建数据库
-
-`pixi run rebuild` — 全量重建数据库：
-
-1. 将 `data/archive/` 中的账单文件移回 `data/input/`
-2. 删除旧数据库 `data/api_ledger.db`
-3. 重新运行主程序（导入 → 生成报告）
-
-适用于预设规则变更（列映射 / 单价解析等）后，需要用新规则重算全部历史数据的情况。原 `rebuild_db.bat` 已由该任务替代。
-
-### 校验报告图表（开发用）
-
-`pixi run check-report` — 用 node 最小桩件跑一遍 `data/report.html` 内嵌的图表脚本，
-校验数据口径 / tooltip 文案 / 空态：均价曲线的点是否落在当日原始单价范围内、
-类型占比是否合计 100.00%、tooltip 是否出现 `undefined`、空态是否抛异常。
-报告需先生成，检查失败退出码为 1。
-
-只检查「数据对不对」，**不检查排版**（图例换行、标签遮挡、刻度美观只能在浏览器里看）。
-详见 [tools/report_check/README.md](tools/report_check/README.md)。
-
-### 命令行参数
-
-| 参数 | 作用 |
-| :--- | :--- |
-| （无参数） | 导入全部文件；同平台日期重叠的旧账单被替换 |
-| `--legacy` | 回退到旧的冲突裁决流程（逐条询问覆盖 / 跳过） |
-| `--force` | 冲突全部覆盖，不询问（**仅 `--legacy` 下生效**） |
-| `--yes` | 冲突全部跳过，不询问（**仅 `--legacy` 下生效**，适合脚本） |
-| `--dry-run` | 仅检测，列出将被替换的旧账单，不写入数据库也不归档文件 |
-| `--no-report` | 只导入，不生成报告 |
-| `--no-open` | 生成报告但不弹出浏览器 |
-
-### 冲突裁决（旧流程，`--legacy`）
-
-判定规则（按 key = 日期/平台/项目/模型/类型）：
-
-- 文件名时间区段**不重叠** → 互补数据，自动累加，无需确认
-- 文件名时间区段**重叠**且数值不同 → 冲突，终端逐条展示「已有值 vs 本次值」，可选：
-  - `y` 覆盖本条　`n` 跳过本条
-  - `a` 覆盖本文件全部冲突　`s` 跳过本文件全部冲突
-  - `q` 中止导入（本文件不写入不归档）
-
-账单必须能匹配 `presets/` 下某个平台预设，否则导入会被拒绝并提示编写预设（参照 `presets/_template.py`）。
-
-## HTML 报告功能
-
-报告为**单文件自包含 HTML**：全部明细以 JSON 内嵌，echarts 内联（首次自动下载到本地），无需服务器、离线可用。
-
-- **筛选栏**（日期范围 / 平台 / 项目 / 模型 / 类型 / 关键词）——筛选同时作用于汇总卡片、全部图表和明细表
-- **汇总卡片**：总费用 / 总 Tokens / 记录数 / 模型数 / 平台数（随筛选联动）
-- **图表**（全部由前端按当前筛选实时计算）：
-  - 使用趋势折线图：费用 + Tokens 双轴，日 / 周 / 月粒度切换，含均值线
-  - 模型 Token / 费用对比：每模型两根横向条（Token / 费用），横轴为占总量百分比，条右侧标注绝对值
-  - 模型 Token / 费用构成对比：平台 × 模型 100% 堆叠条形图（缓存输入 / 输入 / 输出），右侧标注每 1M Tokens 均价；悬停显示各类型占比与单价，期间调价显示为 `¥2→¥5`
-  - 模型均价变化趋势：每模型一条线，y 为当日每 1M Tokens 加权均价 `Σ单价×Tokens / ΣTokens`（保留 3 位小数），与「模型 Token / 费用构成对比」同口径；悬停显示当日该模型的类型 Token 占比；同模型跨平台时按平台拆线
-- **明细表**：默认按 平台 → 项目 → 日期 排序，支持表头点击排序、翻页；列含 时间 / 平台 / 项目 / 模型 / 类型 / Tokens / 金额 / 单价 / 来源文件
-- **浅色 / 暗色主题**：默认跟随系统（`prefers-color-scheme`），右上角按钮可手动切换并记住选择（`localStorage`）。图表文字画在 canvas 里，浏览器/扩展的强制暗色反色不到，所以报告自带暗色配色（CSS 变量 + 注册给 ECharts 的主题）
-
-## 输入文件格式
-
-### 平台导入预设
-
-程序会优先匹配 `presets/` 下的**平台预设**。每个平台一个 `.py` 文件，定义该平台的相关规则：
-
-- 列名映射（表头 → 标准字段）
-- 默认值（如无 platform 列时自动填充）
-- type 翻译（统一为：输入 / 输出 / 缓存输入）
-- 模型名映射（平台原始名 → 统一名称）
-- 可选 `parse_row` 函数（处理从单个单元格解析多字段、跳过特殊记录等复杂逻辑）
-
-匹配规则：先按文件名关键词，再按表头关键词，命中即使用该预设。**匹配不到任何预设时拒绝导入**，提示参照 `presets/_template.py` 编写预设。
-
-新增平台只需在 `presets/` 放一个 `.py` 文件，无需改代码。
-
-### 标准字段
-
-所有平台账单最终统一映射到以下标准字段（在预设的 `COLUMN_MAPPING` 中声明）：
-
-| 标准字段 | 类型 | 说明 | 数据格式 / 可选范围 |
-| :---: | :---: | :---: | ----- |
-| `bill_start` | TEXT | 账单开始时间 | `yyyy-MM-dd` 或 `yyyy-MM-dd HH:mm:ss` |
-| `bill_end` | TEXT | 账单截止时间 | 缺省时自动取 `bill_start` |
-| `platform` | TEXT | 平台名称 | 任意文本，如 `DeepSeek`、`Paratera` |
-| `project` | TEXT | 项目名 | 任意文本，如 `sakura`、`vscode` |
-| `model` | TEXT | 模型名称 | 任意文本，如 `DeepSeek-V4-Flash`、`Kimi-K2.5` |
-| `type` | TEXT | 计费类型 | 仅限：`输入`、`输出`、`缓存输入` |
-| `tokens` | INTEGER | Tokens 数量 | 非负整数 |
-| `cost` | REAL | 金额 | 非负浮点数，单位：元 |
-| `unit_price` | REAL | 单价 | 非负浮点数，单位：元/百万tokens |
-
-### 未匹配的列
-
-未在 `COLUMN_MAPPING` 中映射的列会被忽略，不写入数据库。
-
-### 时间粒度兼容
-
-按小时计费的账单会自动截断为按日聚合（归入 `bill_start` 那天）；按日计费的账单只需提供日期列。
-
----
-
-## 目录结构
-
-```text
-APILedger/
-├── src/                        # 全部 Python 源码 (平铺, 无包层级)
-│   ├── paths.py                # 路径解析: 项目根与 data/presets/.cache 各目录
-│   ├── main.py                 # 程序入口 (导入替换 → 生成报告 → 弹出浏览器)
-│   ├── models.py               # 标准字段定义
-│   ├── presets.py              # 平台预设引擎 (加载/匹配/应用 presets/*.py)
-│   ├── report.py               # HTML 报告生成器 (数据提取 + 模板渲染)
-│   ├── report_template.html    # 报告 HTML 模板 (前端筛选/图表/表格)
-│   ├── db.py                   # SQLite 数据库操作 (建表/UPSERT/替换删除/聚合查询)
-│   └── importer.py             # XLSX / CSV 文件扫描、列匹配、导入 (替换/两阶段)、归档
-├── presets/                    # 平台导入预设 (每平台一个 .py 文件, 属于代码)
-│   ├── deepseek.py
-│   ├── paratera.py
-│   └── _template.py            # 预设模板 (新建平台时复制参考)
-├── tests/                      # pytest 测试套件
-│   └── fixtures/               # 测试用账单样本 (generate_test_data.py 生成)
-├── tools/                      # 开发辅助工具集 (每工具一个目录 + README)
-│   └── report_check/           # 报告图表 JS 校验 (pixi run check-report)
-├── dev_notes/                  # 开发文档与踩坑笔记 (本地维护, 不入库)
-├── data/                       # 用户数据与产物 (运行时自动创建, 不入库)
-│   ├── input/                  # 待导入的 XLSX / CSV 文件存放处
-│   ├── archive/                # 已导入文件的归档目录
-│   ├── api_ledger.db           # SQLite 数据库文件
-│   └── report.html             # 生成的报告 (单文件自包含)
-├── .cache/                     # 运行时第三方下载缓存 (echarts.min.js, 不入库)
-├── pyproject.toml              # 项目元数据 + pytest 配置 (不打包发布)
-├── pixi.toml                   # Pixi 环境与任务清单 (依赖唯一来源)
-└── pixi.lock                   # 环境锁文件
+```nix
+# flake.nix
+{
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    home-manager.url = "github:nix-community/home-manager";
+    apiledger.url = "github:<owner>/APILedger";
+  };
+}
 ```
 
-`data/`（含 `input/`、`archive/`、数据库、报告）与 `.cache/` 均为运行时自动创建，不纳入版本控制。
+### 2. Import the module file
 
----
+```nix
+{ inputs, ... }:
+{
+  imports = [ inputs.apiledger.homeManagerModules.default ];
+}
+```
 
-## 数据库结构
+`inputs.apiledger.homeManagerModules.default` is the same module as the file `nix/hm.nix`, so importing the path directly works too:
 
-### 表: `api_records` (聚合表, 每 key 一行)
+```nix
+imports = [ "${inputs.apiledger}/nix/hm.nix" ];
+```
 
-| 列名 | 类型 | 说明 |
-| :---: | :---: | ----- |
-| `id` | INTEGER PK | 自增主键 |
-| `date` | TEXT | 日期 (YYYY-MM-DD) |
-| `platform` | TEXT | 平台名称 |
-| `project` | TEXT | 项目名 |
-| `model` | TEXT | 模型名称 |
-| `type` | TEXT | 计费类型 (输入/输出/缓存输入) |
-| `tokens` | INTEGER | Tokens 数量 |
-| `cost` | REAL | 金额 |
-| `unit_price` | REAL | 单价 (元/百万tokens) |
-| `source_file` | TEXT | 来源文件 (多个以逗号分隔) |
+### 3. Example `home.nix`
 
-唯一约束：`(date, platform, project, model, type)`。
+```nix
+{ inputs, ... }:
+{
+  imports = [ inputs.apiledger.homeManagerModules.default ];
 
-### 表: `record_sources` (贡献明细表, 每 key × source_file 一行)
+  programs.apiledger = {
+    enable = true;
+    # dataDir = "${config.xdg.dataHome}/apiledger";  # default
+    # presets = ./my-presets;                        # optional extra presets
+  };
+}
+```
 
-记录每个账单文件对该 key 的贡献（tokens / cost / unit_price）。聚合行 = 各贡献之和。
-导入新账单时，同平台日期区段重叠的旧账单贡献被删除；互补文件（时间区段不重叠）自动累加。
-某 key 的贡献全部被删除时，对应聚合行一并删除（不留 `tokens=0` 空行）。
+Module options:
 
-### 索引
+| Option | Default | Description |
+| :--- | :--- | :--- |
+| `programs.apiledger.enable` | `false` | Install the CLI and set `APILEDGER_ROOT`. |
+| `programs.apiledger.package` | flake package | Package to install. |
+| `programs.apiledger.dataDir` | `${config.xdg.dataHome}/apiledger` | Persistent ledger database, default report, cache, and user presets. |
+| `programs.apiledger.presets` | `null` | Optional directory of extra JSON presets, linked to `<dataDir>/presets`. |
 
-- `date`、`platform`、`project`、`model`、`type` — 加速筛选与聚合
+The package can also be used without home-manager:
 
----
+```nix
+environment.systemPackages = [ inputs.apiledger.packages.${pkgs.system}.default ];
+```
 
-## 依赖与环境
+or directly:
 
-依赖与任务统一在 [pixi.toml](pixi.toml) 中声明（conda-forge），`pyproject.toml` 只放项目元数据与 pytest 配置，不重复声明依赖。
+```bash
+nix run github:<owner>/APILedger -- usage_data.zip
+nix build github:<owner>/APILedger
+```
 
-| 包 | 用途 |
-| :---: | ----- |
-| `pandas` | XLSX / CSV 文件读取 |
-| `openpyxl` | XLSX 引擎 (pandas 依赖) |
-| `pytest` | 测试 (`pixi run python -m pytest`) |
-| `nodejs` | 报告图表 JS 校验 (`pixi run check-report`)，仅开发用 |
+## Usage
 
-常用命令：
+```bash
+apiledger usage_data_2026-09-21_2026-10-20.zip
 
-| 命令 | 作用 |
+# write to a file without opening anything
+apiledger usage_data_2026-09-21_2026-10-20.zip -o report.html
+```
+
+The archive may contain `.csv` and `.xlsx` bills. Every entry is matched against the platform presets; matching bills are imported, other entries (for example a cost summary next to a token-detail file) are skipped.
+
+Import behavior:
+
+- **New bills replace overlapping old bills**: bills of the same platform whose filename date ranges overlap are removed before the new data is written (re-exports and corrections can simply be imported again).
+- Bills of the same platform with non-overlapping date ranges are complementary data and are accumulated.
+- Re-importing the same archive is idempotent.
+- Files in the archive are read directly; there is no input directory to manage.
+- Without `-o` the report is written to `$APILEDGER_ROOT/data/report.html` and opened with the system default browser.
+- With `-o outfile.html` the report is written to that path and **not** opened, which is what scripts should use.
+
+### CLI options
+
+| Option | Behavior |
 | :--- | :--- |
-| `pixi run start` | 正常运行（导入新账单 + 替换重叠旧账单 + 生成报告） |
-| `pixi run rebuild` | 全量重建数据库（预设规则变更后重算历史数据） |
-| `pixi run python -m pytest` | 跑测试套件 |
-| `pixi run check-report` | 校验报告图表 JS（需先生成报告） |
+| `-o <file>` | Write the report to `<file>` without opening it |
+| `-h`, `--help` | Show help |
+
+Bills must match a platform preset, otherwise the entry is skipped with a notice pointing at `presets/_template.json`.
+
+## HTML report
+
+The report is a **single self-contained HTML file**: all rows are embedded as JSON, ECharts is inlined (downloaded once into `$APILEDGER_ROOT/.cache/echarts.min.js`, with a CDN fallback), no server required, works offline.
+
+- **Filter bar** (date range / platform / project / model / type / keyword) — filters the summary cards, all charts, and the detail table together
+- **Summary cards**: total cost / total tokens / record count / model count / platform count (follow the filters)
+- **Charts** (all recomputed in the browser from the filtered rows):
+  - Usage trend: cost + tokens on two axes, daily/weekly/monthly granularity, averages
+  - Model token / cost comparison: two horizontal bars per model, axis in percent of total, absolute values on the right
+  - Model token / cost composition: platform × model 100% stacked bars (cache input / input / output) with the price per 1M tokens on the right; hover shows type shares and unit prices, with price changes shown as `CNY 2 -> CNY 5`
+  - Model average price over time: one line per model, daily weighted average `Σ(unit price × tokens) / Σtokens` per 1M tokens, same basis as the composition chart; hover shows type shares; a model used on several platforms is split per platform
+- **Detail table**: sorted by platform → project → date by default, clickable column sorting and pagination; columns are date / platform / project / model / type / tokens / cost / unit price / source file
+- **Light / dark theme**: follows the system by default (`prefers-color-scheme`), toggled in the top-right corner and remembered in `localStorage`. Chart text lives in canvas pixels, so the report ships its own dark palette (CSS variables plus an ECharts theme)
+
+## Input format
+
+The repository's `usage_data_2026-09-21_2026-10-20.zip` is an example archive: it contains an `amount-*.csv` token detail file and a `cost-*.csv` daily cost summary.
+The DeepSeek preset matches the detail file (`price × amount` reproduces the summary exactly) and the summary is skipped as unrecognized auxiliary data.
+
+### Platform presets
+
+A preset is a JSON file: the bundled ones live in the package under `share/apiledger/presets/`, and user presets can be added to `$APILEDGER_ROOT/presets/` (same filename overrides a bundled preset).
+
+The program matches a bill by filename keyword first, then by header keywords; a bill matching no preset is skipped. See `presets/_template.json` for a complete starting point.
+
+| Field | Required | Description |
+| :--- | :---: | :--- |
+| `name` | no | Preset name shown in the log (defaults to the filename stem) |
+| `match_filename` | yes | Filename keywords; any one hit makes the preset a candidate (an empty list matches nothing by filename) |
+| `match_headers` | no | Header keywords; all must be present for the preset to match |
+| `column_mapping` | yes | Standard field → list of header keywords (substring, case/space-insensitive, longest keyword first) |
+| `defaults` | no | Fixed values for fields missing from the bill (e.g. `platform`) |
+| `type_map` | no | Raw type → standard type |
+| `skip_types` | no | Raw types whose rows are skipped entirely |
+| `computed` | no | Field → arithmetic expression (`+ - * / ( )` and field names), evaluated in declaration order |
+| `model_map` | no | Raw model name → unified model name |
+| `parse` | no | Row-level rules (see below) |
+
+`parse` supports:
+
+| Rule | Description |
+| :--- | :--- |
+| `skip_if` | `{ "field": ["value", ...] }` — skip the row when the mapped field (or a raw column with that name) equals one of the values |
+| `extract` | `{ "column", "pattern", "group_type", "group_tokens" }` — parse type and tokens out of a single cell with a regular expression; no match skips the row |
+| `date_format` | `{ "field", "from": "yyyyMMdd" }` — convert a compact date to `YYYY-MM-DD` |
+
+### Standard fields
+
+| Field | Type | Description | Format |
+| :---: | :---: | :--- | :--- |
+| `bill_start` | TEXT | Bill start time | `yyyy-MM-dd` or `yyyy-MM-dd HH:mm:ss` |
+| `platform` | TEXT | Platform name | Any text |
+| `project` | TEXT | Project name | Any text |
+| `model` | TEXT | Model name | Any text |
+| `type` | TEXT | Billing type | `cache_input` / `input` / `output` |
+| `tokens` | INTEGER | Token count | Non-negative integer |
+| `cost` | REAL | Amount | Non-negative float, CNY |
+| `unit_price` | REAL | Unit price | Non-negative float, CNY per 1M tokens |
+
+Timestamps are truncated to the day (bills are daily buckets); daily bills only need a date column.
+Columns not referenced by `column_mapping` are ignored.
+
+## Data layout
+
+The ledger is persistent: `$APILEDGER_ROOT/data/api_ledger.db` keeps all imported history, which is what makes replacement of overlapping bills and accumulation of complementary bills work across runs.
+`$APILEDGER_ROOT` defaults to `$XDG_DATA_HOME/apiledger` (`~/.local/share/apiledger`); in the home-manager module it is the `dataDir` option.
+`-o` only chooses where the report is written; it does not affect the ledger.
+`APILEDGER_SHARE_DIR` overrides where the bundled presets and report template are read from (a development escape hatch; the package bakes the correct path).
+
+```text
+$APILEDGER_ROOT/
+├── data/
+│   ├── api_ledger.db           # SQLite database
+│   └── report.html             # generated report
+├── .cache/
+│   └── echarts.min.js          # downloaded once
+└── presets/                    # optional user presets (JSON)
+```
+
+## Database schema
+
+### Table `api_records` (aggregate, one row per key)
+
+| Column | Type | Description |
+| :---: | :---: | ----- |
+| `id` | INTEGER PK | Auto increment |
+| `date` | TEXT | Date (`YYYY-MM-DD`) |
+| `platform` | TEXT | Platform |
+| `project` | TEXT | Project |
+| `model` | TEXT | Model |
+| `type` | TEXT | Billing type |
+| `tokens` | INTEGER | Tokens |
+| `cost` | REAL | Amount |
+| `unit_price` | REAL | Unit price (CNY per 1M tokens) |
+| `source_file` | TEXT | Source bills, comma separated |
+
+Unique constraint: `(date, platform, project, model, type)`.
+
+### Table `record_sources` (contributions, one row per key × source file)
+
+Records each bill's contribution to a key. Aggregate rows are the sum of their contributions.
+When a new bill overlaps an old one, the old contributions are deleted; complementary bills accumulate.
+A key whose contributions are all deleted is removed as well (no empty `tokens=0` rows).
+
+Indexes exist on `date`, `platform`, `project`, `model`, and `type`.
+
+## Building from source
+
+```bash
+nix build
+./result/bin/apiledger usage_data.zip
+```
+
+For development, `nix develop` provides CMake, Ninja, curl, and Node.js:
+
+```bash
+nix develop -c cmake -S . -B build -G Ninja
+nix develop -c cmake --build build
+```
+
+The report chart checker runs against a generated report:
+
+```bash
+node tools/report_check/check.mjs ~/.local/share/apiledger/data/report.html
+```

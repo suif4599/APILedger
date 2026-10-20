@@ -1,14 +1,14 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<!-- 报告自带浅色/暗色两套主题: 图表文字画在 canvas 像素里, 浏览器或扩展的强制反色只作用于 DOM
-     (反色不到画布), 所以自己声明支持两套配色, 由脚本按系统偏好或用户选择切换 -->
+<!-- The report ships its own light/dark themes: chart text is drawn into canvas pixels,
+     which forced browser dark mode cannot invert, so the script selects a theme. -->
 <meta name="color-scheme" content="light dark">
-<title>APILedger - API 账单报告</title>
+<title>APILedger - API Bill Report</title>
 <script>
-  // 尽早定主题, 避免先按浅色渲染再闪一下 (须在样式之前执行)
+  // Set the theme before styles apply to avoid a light-theme flash.
   (function () {
     try {
       var t = localStorage.getItem('apiledger-theme');
@@ -22,7 +22,7 @@
 </script>
 <style>
   :root {
-    /* 浅色主题 (默认) */
+    /* Light theme (default) */
     --primary: #1f538d; --accent: #1f538d; --secondary: #2fa572; --bg: #f4f6f9;
     --card: #ffffff; --field: #ffffff; --border: #e3e6ea;
     --text: #1a1a1a; --muted: #6b7280; --empty: #9ca3af;
@@ -30,7 +30,7 @@
     --btn2-bg: #e5e7eb; --btn2-text: #374151;
     color-scheme: light;
   }
-  /* 暗色主题: 头部脚本把选择写在 <html data-theme> 上; 图表配色见脚本里的 PALETTE */
+  /* Dark theme: the header script writes the choice to <html data-theme>; chart colors come from PALETTE. */
   :root[data-theme="dark"] {
     --primary: #2f6ca8; --accent: #7fb3e0; --secondary: #3fbf8a; --bg: #12151b;
     --card: #1b1f27; --field: #232a34; --border: #2c3340;
@@ -40,7 +40,7 @@
     color-scheme: dark;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; background: var(--bg); color: var(--text); padding: 24px; }
+  body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); padding: 24px; }
   h1 { font-size: 22px; }
   .page-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; }
   .theme-toggle { padding: 4px 12px; border: 1px solid var(--border); background: var(--card); color: var(--muted); border-radius: 6px; cursor: pointer; font-size: 12px; white-space: nowrap; }
@@ -57,7 +57,7 @@
   .chart-box h3 { font-size: 14px; margin-bottom: 8px; }
   .chart-box h3 .hint { color: var(--muted); font-weight: normal; font-size: 12px; }
   .chart { width: 100%; height: 320px; }
-  /* 各模型每日均价: 折线 + 多行平铺图例, 需要更高的画布 */
+  /* Daily average price per model: lines plus a multi-row legend need a taller canvas. */
   #chart-price { height: 400px; }
   .chart.empty { position: relative; }
   .chart-tabs { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
@@ -75,7 +75,6 @@
   .preset:hover { border-color: var(--primary); color: var(--accent); }
   .preset.active { background: var(--primary); color: #fff; border-color: var(--primary); }
   .date-hint { font-size: 12px; color: var(--muted); align-self: center; }
-  .unsnap { color: #e8a838; font-weight: bold; cursor: help; }
   .btn { padding: 6px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; background: var(--primary); color: #fff; }
   .btn.secondary { background: var(--btn2-bg); color: var(--btn2-text); }
   .table-wrap { background: var(--card); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
@@ -99,114 +98,110 @@
 </head>
 <body>
   <div class="page-head">
-    <h1>📊 APILedger 账单报告</h1>
-    <button type="button" class="theme-toggle" id="btn-theme">🌙 暗色</button>
+    <h1>APILedger Bill Report</h1>
+    <button type="button" class="theme-toggle" id="btn-theme">Dark</button>
   </div>
 
-  <!-- 筛选栏 (作用于汇总卡片、全部图表和明细表) -->
+  <!-- Filters (apply to the cards, all charts and the table) -->
   <div class="filters">
-    <h3>🔍 数据筛选</h3>
+    <h3>Filters</h3>
     <div class="filter-row">
-      <div class="filter-item"><label>开始日期</label><input type="date" id="f-start"></div>
-      <div class="filter-item"><label>结束日期</label><input type="date" id="f-end"></div>
-      <div class="filter-item"><label>快速区间</label><div style="display:flex;gap:4px;" id="quick-presets">
-        <button type="button" class="preset" data-range="7d">近1周</button>
-        <button type="button" class="preset" data-range="1m">近1月</button>
-        <button type="button" class="preset" data-range="3m">近3月</button>
-        <button type="button" class="preset" data-range="6m">近6月</button>
-        <button type="button" class="preset" data-range="1y">近1年</button>
-        <button type="button" class="preset" data-range="all">全部</button>
+      <div class="filter-item"><label>Start date</label><input type="date" id="f-start"></div>
+      <div class="filter-item"><label>End date</label><input type="date" id="f-end"></div>
+      <div class="filter-item"><label>Quick range</label><div style="display:flex;gap:4px;" id="quick-presets">
+        <button type="button" class="preset" data-range="7d">Last 7 days</button>
+        <button type="button" class="preset" data-range="1m">Last 1 month</button>
+        <button type="button" class="preset" data-range="3m">Last 3 months</button>
+        <button type="button" class="preset" data-range="6m">Last 6 months</button>
+        <button type="button" class="preset" data-range="1y">Last 1 year</button>
+        <button type="button" class="preset" data-range="all">All</button>
       </div></div>
       <span class="date-hint" id="date-hint"></span>
     </div>
     <div class="filter-row" style="margin-top:10px;">
-      <div class="filter-item"><label>平台</label><select id="f-platform"><option value="">全部</option></select></div>
-      <div class="filter-item"><label>项目</label><select id="f-project"><option value="">全部</option></select></div>
-      <div class="filter-item"><label>模型</label><select id="f-model"><option value="">全部</option></select></div>
-      <div class="filter-item"><label>类型</label><select id="f-type"><option value="">全部</option></select></div>
-      <div class="filter-item"><label>关键词</label><input type="text" id="f-keyword" placeholder="搜索模型/项目/平台..."></div>
+      <div class="filter-item"><label>Platform</label><select id="f-platform"><option value="">All</option></select></div>
+      <div class="filter-item"><label>Project</label><select id="f-project"><option value="">All</option></select></div>
+      <div class="filter-item"><label>Model</label><select id="f-model"><option value="">All</option></select></div>
+      <div class="filter-item"><label>Type</label><select id="f-type"><option value="">All</option></select></div>
+      <div class="filter-item"><label>Keyword</label><input type="text" id="f-keyword" placeholder="Search model/project/platform..."></div>
       <div class="filter-actions">
-        <button class="btn" id="btn-apply">应用</button>
-        <button class="btn secondary" id="btn-reset">重置</button>
+        <button class="btn" id="btn-apply">Apply</button>
+        <button class="btn secondary" id="btn-reset">Reset</button>
       </div>
     </div>
   </div>
 
-  <!-- 汇总卡片 (随筛选联动) -->
+  <!-- Summary cards (follow the filters) -->
   <div class="cards">
-    <div class="card"><div class="label">总费用</div><div class="value cost" id="c-cost">-</div></div>
-    <div class="card"><div class="label">总 Tokens</div><div class="value tokens" id="c-tokens">-</div></div>
-    <div class="card"><div class="label">记录数</div><div class="value" id="c-records">-</div></div>
-    <div class="card"><div class="label">模型数</div><div class="value" id="c-models">-</div></div>
-    <div class="card"><div class="label">平台数</div><div class="value" id="c-platforms">-</div></div>
+    <div class="card"><div class="label">Total cost</div><div class="value cost" id="c-cost">-</div></div>
+    <div class="card"><div class="label">Total tokens</div><div class="value tokens" id="c-tokens">-</div></div>
+    <div class="card"><div class="label">Records</div><div class="value" id="c-records">-</div></div>
+    <div class="card"><div class="label">Models</div><div class="value" id="c-models">-</div></div>
+    <div class="card"><div class="label">Platforms</div><div class="value" id="c-platforms">-</div></div>
   </div>
 
-  <!-- 图表 (全部由前端按当前筛选实时计算) -->
+  <!-- Charts (computed in the browser from the current filters) -->
   <div class="chart-grid">
     <div class="chart-box wide">
-      <h3>使用趋势 <span class="hint">(费用 / Tokens 双轴)</span></h3>
+      <h3>Usage trend <span class="hint">(cost / tokens, dual axis)</span></h3>
       <div class="chart-tabs" id="tabs-gran">
-        <button data-g="日" class="active">日</button>
-        <button data-g="周">周</button>
-        <button data-g="月">月</button>
+        <button data-g="day" class="active">Day</button>
+        <button data-g="week">Week</button>
+        <button data-g="month">Month</button>
       </div>
       <div id="chart-trend" class="chart"></div>
     </div>
     <div class="chart-box">
-      <h3>模型 Token / 费用对比 <span class="hint"></span></h3>
+      <h3>Model token / cost comparison <span class="hint"></span></h3>
       <div id="chart-model" class="chart"></div>
     </div>
     <div class="chart-box">
-      <h3>模型 Token / 费用构成对比 <span class="hint">(右侧为每 1M Tokens 均价，* 表示有未匹配官方价的记录)</span></h3>
+      <h3>Model token / cost composition <span class="hint">(right: average price per 1M tokens)</span></h3>
       <div class="chart-tabs" id="tabs-stack">
-        <button data-m="tokens" class="active">Token 类型</button>
-        <button data-m="cost">费用</button>
+        <button data-m="tokens" class="active">Token types</button>
+        <button data-m="cost">Cost</button>
       </div>
       <div id="chart-stack" class="chart"></div>
     </div>
     <div class="chart-box wide">
-      <h3>模型均价变化趋势 <span class="hint">(每 1M Tokens 均价)</span></h3>
+      <h3>Model average price trend <span class="hint">(per 1M tokens)</span></h3>
       <div id="chart-price" class="chart"></div>
     </div>
   </div>
 
-  <!-- 明细表 -->
+  <!-- Detail table -->
   <div class="table-wrap">
     <div class="table-meta">
       <span style="display:flex;align-items:center;gap:10px;">
-        <span id="table-count">共 0 条</span>
+        <span id="table-count">0 rows</span>
         <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--muted);cursor:pointer;">
-          每页显示条数
+          Rows per page
           <select id="f-page-size" style="padding:2px 6px;border:1px solid var(--border);border-radius:5px;font-size:12px;color:var(--muted);background:var(--field);cursor:pointer;">
             <option value="30" selected>30</option>
             <option value="50">50</option>
             <option value="100">100</option>
-            <option value="all">全部</option>
+            <option value="all">All</option>
           </select>
         </label>
-        <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--muted);cursor:pointer;">
-          <input type="checkbox" id="f-unsnapped"> 只看未吸附
-        </label>
       </span>
-      <span style="font-size:11px;">单价标 <span class="unsnap">*</span> = 未匹配预设官方价 (悬停查看原因)</span>
       <div class="pagination">
-        <button onclick="changePage(-1)" id="btn-prev">‹ 上一页</button>
+        <button onclick="changePage(-1)" id="btn-prev">&lt; Prev</button>
         <span id="page-info">1 / 1</span>
-        <button onclick="changePage(1)" id="btn-next">下一页 ›</button>
+        <button onclick="changePage(1)" id="btn-next">Next &gt;</button>
       </div>
     </div>
     <table>
       <thead>
         <tr>
-          <th data-k="bill_start">时间</th>
-          <th data-k="platform">平台</th>
-          <th data-k="project">项目</th>
-          <th data-k="model">模型</th>
-          <th data-k="type">类型</th>
+          <th data-k="bill_start">Time</th>
+          <th data-k="platform">Platform</th>
+          <th data-k="project">Project</th>
+          <th data-k="model">Model</th>
+          <th data-k="type">Type</th>
           <th data-k="tokens" class="num">Tokens</th>
-          <th data-k="cost" class="num">金额(¥)</th>
-          <th data-k="unit_price" class="num">单价(¥/百万)</th>
-          <th data-k="source_file">来源文件</th>
+          <th data-k="cost" class="num">Cost (CNY)</th>
+          <th data-k="unit_price" class="num">Unit price (CNY/M)</th>
+          <th data-k="source_file">Source file</th>
         </tr>
       </thead>
       <tbody id="table-body"></tbody>
@@ -220,31 +215,30 @@
   const CHART_COLORS = __CHART_COLORS__;
   const CHART_COLORS_DARK = __CHART_COLORS_DARK__;
 
-  // ═══════════════════════════════════════════
-  // 主题 (浅色 / 暗色)
-  // ═══════════════════════════════════════════
-  // 图表文字与图例由 ECharts 画在 canvas 像素里, 浏览器/扩展的"强制暗色"只反色 DOM, 反色不到
-  // 画布 → 与其跟它对着干, 不如自带一套暗色配色。DOM 配色走 CSS 变量 (:root[data-theme="dark"]),
-  // 图表配色走这里的 PALETTE, 坐标轴/图例/tooltip 等通用样式由 registerTheme 提供。
-  // 注意: 主题在 echarts.init 时绑定, 切换主题必须销毁实例重建 (见 toggleTheme)。
+  // ===========================================
+  // Theme (light / dark)
+  // ===========================================
+  // Chart text is drawn into canvas pixels and cannot be inverted by browser dark mode.
+  // DOM colors come from CSS variables; chart colors come from PALETTE below.
+  // Themes bind at echarts.init, so switching must dispose and recreate instances.
   const PALETTE = {
     light: {
       canvas: '#ffffff', series: CHART_COLORS,
       cost: '#1f538d', tokens: '#2fa572', avgLine: '#c0392b',
-      bucket: { '缓存输入': '#16a085', '输入': '#1f538d', '输出': '#e8a838' },
-      warn: '#e8a838', note: '#6b7280', tipMuted: '#d1d5db',
-      label: 'inherit',          // 图内数值标注: 浅色沿用 ECharts 默认色, 观感不变
+      bucket: { cache_input: '#16a085', input: '#1f538d', output: '#e8a838' },
+      note: '#6b7280', tipMuted: '#d1d5db',
+      label: 'inherit',
     },
     dark: {
       canvas: '#1b1f27', series: CHART_COLORS_DARK,
       cost: '#7fb3e0', tokens: '#3fbf8a', avgLine: '#e5736a',
-      bucket: { '缓存输入': '#2ec4a6', '输入': '#7fb3e0', '输出': '#f0b445' },
-      warn: '#f0b445', note: '#9ca3af', tipMuted: '#9ca3af',
-      label: '#e5e7eb',          // 暗色必须显式给浅色: 默认色是深灰, 压在深底上看不见
+      bucket: { cache_input: '#2ec4a6', input: '#7fb3e0', output: '#f0b445' },
+      note: '#9ca3af', tipMuted: '#9ca3af',
+      label: '#e5e7eb',
     },
   };
   if (typeof echarts !== 'undefined' && echarts.registerTheme) {
-    // 浅色也显式给画布底 (与卡片同色, 观感不变): 画布透明时, 一旦 DOM 被外部工具暗化就会压住图内文字
+    // Opaque canvas background, so forced dark mode cannot wash out chart text.
     echarts.registerTheme('apiLedgerLight', { backgroundColor: PALETTE.light.canvas });
     const AXIS_DARK = {
       axisLine: { lineStyle: { color: '#2c3340' } },
@@ -255,7 +249,7 @@
     };
     echarts.registerTheme('apiLedgerDark', {
       backgroundColor: PALETTE.dark.canvas,
-      color: CHART_COLORS_DARK,          // 未显式指定颜色的系列兜底
+      color: CHART_COLORS_DARK,
       categoryAxis: AXIS_DARK, valueAxis: AXIS_DARK,
       legend: { textStyle: { color: '#e5e7eb' } },
       tooltip: {
@@ -265,62 +259,60 @@
     });
   }
 
-  const THEME_KEY = 'apiledger-theme';   // 手动选择存在这里 (与头部脚本同一个键)
+  const THEME_KEY = 'apiledger-theme';
   let themeName = 'light';
-  let P = PALETTE.light;                 // 当前主题配色, 渲染函数统一从这里取色
+  let P = PALETTE.light;
 
   function setTheme(name) {
     themeName = PALETTE[name] ? name : 'light';
     P = PALETTE[themeName];
     document.documentElement.dataset.theme = themeName;
     const btn = document.getElementById('btn-theme');
-    if (btn) btn.textContent = themeName === 'dark' ? '☀️ 浅色' : '🌙 暗色';
+    if (btn) btn.textContent = themeName === 'dark' ? 'Light' : 'Dark';
   }
 
   function toggleTheme() {
     setTheme(themeName === 'dark' ? 'light' : 'dark');
-    try { localStorage.setItem(THEME_KEY, themeName); } catch (e) { /* file:// 下可能不可写 */ }
+    try { localStorage.setItem(THEME_KEY, themeName); } catch (e) { /* file:// may be read-only */ }
     Object.keys(charts).forEach(id => disposeChart(id));
     renderCharts();
   }
 
-  // ═══════════════════════════════════════════
-  // 状态
-  // ═══════════════════════════════════════════
+  // ===========================================
+  // State
+  // ===========================================
   const ROWS = DATA.records || [];
-  let filtered = ROWS;          // 当前筛选结果
+  let filtered = ROWS;
   let page = 1;
-  let sortKey = null;           // null = 默认复合排序 (平台→项目→日期)
+  let sortKey = null;           // null = default compound sort (platform, project, date)
   let sortDir = -1;
-  let onlyUnsnapped = false;    // 明细表"只看未吸附"
-  let pageSize = 30;            // 明细表每页条数 (Infinity = 全部)
+  let pageSize = 30;            // rows per page (Infinity = all)
 
-  // 图表实例与指标状态
   const charts = {};
   const pieMetric = { stack: 'tokens' };
-  let trendGran = '日';
+  let trendGran = 'day';
 
-  // 类型归并: 预设价格推断可能产生 "输入(缓存命中)" 等类型名, 统一归入三桶
-  // 数组顺序即堆叠顺序 (自下而上): 缓存输入 → 输入 → 输出; 匹配规则显式互斥, 与顺序无关
-  // 颜色不写死在这里, 取 P.bucket[key] (随主题变)
+  // Stack order, bottom to top: cache_input, input, output.
   const TYPE_BUCKETS = [
-    { key: '缓存输入', match: t => t.includes('缓存') },
-    { key: '输入', match: t => !t.includes('缓存') && !t.includes('输出') },
-    { key: '输出', match: t => t.includes('输出') },
+    { key: 'cache_input', label: 'Cache input', match: t => t === 'cache_input' },
+    { key: 'input', label: 'Input', match: t => t !== 'cache_input' && t !== 'output' },
+    { key: 'output', label: 'Output', match: t => t === 'output' },
   ];
+  function typeLabel(t) {
+    const bucket = TYPE_BUCKETS.find(b => b.key === t);
+    return bucket ? bucket.label : (t || '');
+  }
 
-  // ═══════════════════════════════════════════
-  // 格式化工具
-  // ═══════════════════════════════════════════
-  function fmtNum(v) { return Number(v).toLocaleString('zh-CN', { maximumFractionDigits: 2 }); }
-  function fmtCost(v) { return '¥' + Number(v).toLocaleString('zh-CN', { minimumFractionDigits: 4, maximumFractionDigits: 4 }); }
-  function fmtCost2(v) { return '¥' + Number(v).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
-  function fmtTokensM(v) { return (Number(v) / 1e6).toLocaleString('zh-CN', { minimumFractionDigits: 3, maximumFractionDigits: 3 }) + ' M'; }
-  // 表格之外的 tokens 展示统一用 M; 费用保留 4 位 (表格内明细用)
+  // ===========================================
+  // Formatters
+  // ===========================================
+  function fmtNum(v) { return Number(v).toLocaleString('en-US', { maximumFractionDigits: 2 }); }
+  function fmtCost(v) { return 'CNY ' + Number(v).toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 }); }
+  function fmtCost2(v) { return 'CNY ' + Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  function fmtTokensM(v) { return (Number(v) / 1e6).toLocaleString('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 3 }) + ' M'; }
   function fmtMetric(v, metric) { return metric === 'cost' ? fmtCost(v) : fmtTokensM(v); }
 
-  // 数轴美观刻度: interval 取 1/2/5×10^n 且 ≥ v/steps, max 为 interval 的整数倍且 ≥ v。
-  // 上限贴近最长条的值, 刻度尽量为整数 (如 v=45.2 → interval 10, max 50)
+  // Nice axis: interval is 1/2/5 x 10^n and at least v/steps; max is a multiple of interval.
   function niceAxis(v, steps = 9) {
     if (!(v > 0)) return { max: 1, interval: 1 };
     const raw = v / steps;
@@ -333,88 +325,28 @@
     return { max: Number(max.toFixed(10)), interval };
   }
 
-  // 单价吸附: 账单按请求取整导致计算单价微偏 (如 2.01), 与该账单日期生效的
-  // 官方价相对误差 ≤5% 时按官方价显示 (如 2.00)。原始值仍在数据库, 仅展示吸附。
-  // 同一模型不同时段价格不同 → 预设 PRICING 用 history 表达, 此处按日期解析;
-  // 不同平台同模型价格可能不同 → 价表按平台分组, 优先用记录所属平台的配置。
-  const PRICE_TABLE = DATA.pricing || {};
-
-  // 模型在某日期生效的官方价 {input_hit, input_miss, output}; 无价格表返回 null
-  function officialPrice(model, platform, dateStr) {
-    const cfg = PRICE_TABLE[model];
-    if (!cfg) return null;
-    let sub;
-    if (cfg.history || cfg.input_hit != null || cfg.input_miss != null || cfg.output != null) {
-      sub = cfg;                                   // 兼容未按平台分组的内嵌数据
-    } else {
-      sub = cfg[platform];
-      if (!sub) {                                  // 记录平台无价表 → 合并所有平台
-        sub = {};
-        for (const p of Object.keys(cfg)) {
-          const s = cfg[p] || {};
-          for (const k of ['input_hit', 'input_miss', 'output'])
-            if (sub[k] == null && s[k] != null) sub[k] = s[k];
-          if (s.history) sub.history = (sub.history || []).concat(s.history);
-        }
-      }
-    }
-    let cur = sub, best = null;
-    for (const h of (sub.history || [])) {   // 自日期早向日期晚: 取 until ≥ 日期中最小的
-      if (dateStr && String(dateStr) <= String(h.until) &&
-          (!best || String(h.until) < String(best.until))) best = h;
-    }
-    if (best) cur = best;  // 落在历史时段内 → 用该时段价格 (与导入侧 type 反推同语义)
-    const out = {};
-    for (const k of ['input_hit', 'input_miss', 'output']) {
-      if (cur[k] != null) out[k] = Number(cur[k]);
-    }
-    return Object.keys(out).length ? out : null;
-  }
-
-  // 单行单价吸附: 按行类型选对应官方价 (缓存输入→hit, 输出→output, 其余→miss)
-  // 返回 { value, snapped, hint }; 未吸附时 hint 说明原因, 展示层标 * 提示
-  function snapUnitPrice(row) {
-    const v = Number(row.unit_price || 0);
-    if (!v) return { value: v, snapped: false, hint: '' };
-    const prices = officialPrice(row.model, row.platform, String(row.bill_start).slice(0, 10));
-    if (!prices) return { value: v, snapped: false, hint: '该模型未配置官方价表' };
-    const t = String(row.type || '');
-    const official = prices[t.includes('缓存') ? 'input_hit'
-                          : t.includes('输出') ? 'output' : 'input_miss'];
-    if (official == null) return { value: v, snapped: false, hint: '官方价表缺少该类型单价' };
-    if (Math.abs(v - official) <= official * 0.05) return { value: official, snapped: true, hint: '' };
-    return { value: v, snapped: false, hint: `与官方价 ¥${official}/M 偏差超 5%, 未吸附` };
-  }
-
-  // 明细表单价单元格: 2 位小数; 吸附到预设价且预设价多于 2 位小数时按预设精度原样显示;
-  // 未吸附追加 * (悬停显示原因)
+  // Detail table unit price: 2 decimals.
   function priceCell(row) {
     if (!row.unit_price) return '-';
-    const sp = snapUnitPrice(row);
-    if (!sp.snapped)
-      return '¥' + Number(sp.value).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-           + `<span class="unsnap" title="${sp.hint}">*</span>`;
-    const dec = (String(sp.value).split('.')[1] || '').length;
-    return '¥' + Number(sp.value).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: Math.max(2, dec) });
+    return 'CNY ' + Number(row.unit_price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
 
-  // 单价序列 (按时间先后记录的各档单价): 恒定 → "¥2"; 期间调价 → "¥2→¥5";
-  // 档位过多 (未吸附噪声) 时只标首尾, 避免 tooltip 过长
+  // Unit price sequence: constant -> "CNY 2"; price change -> "CNY 2 -> CNY 5".
   function fmtRateSeq(seq) {
     if (!seq || !seq.length) return '';
-    const f = v => '¥' + Number(v).toLocaleString('zh-CN', { maximumFractionDigits: 4 });
+    const f = v => 'CNY ' + Number(v).toLocaleString('en-US', { maximumFractionDigits: 4 });
     if (seq.length === 1) return f(seq[0]);
-    if (seq.length <= 3) return seq.map(f).join('→');
-    return f(seq[0]) + '→…→' + f(seq[seq.length - 1]);
+    if (seq.length <= 3) return seq.map(f).join(' -> ');
+    return f(seq[0]) + ' -> ... -> ' + f(seq[seq.length - 1]);
   }
 
-  // ═══════════════════════════════════════════
-  // 聚合工具 (对 filtered 实时计算)
-  // ═══════════════════════════════════════════
+  // ===========================================
+  // Aggregation helpers (computed from filtered rows)
+  // ===========================================
   function groupSum(rows, field, valueKey) {
     const map = new Map();
     for (const r of rows) {
-      const k = r[field] || '(空)';
+      const k = r[field] || '(empty)';
       map.set(k, (map.get(k) || 0) + Number(r[valueKey] || 0));
     }
     return [...map.entries()]
@@ -434,20 +366,19 @@
       .sort((a, b) => a.period.localeCompare(b.period));
   }
 
-  // 按粒度聚合 (日/周/月)
-  // 按平台×模型分组, 类型归并到三桶 (缓存输入/输入/输出), 同时累计 tokens 与费用
-  // 排序固定按 token 消耗量取 Top-15, 切换 token/费用 指标不改变模型顺序
-  // priceCost: Σ(每行吸附后单价 × tokens), 供加权均价 (元/1M tokens)
+  // Group by platform x model, bucket types into cache_input/input/output, and
+  // accumulate tokens and cost. Order is fixed by token total (Top 15) regardless
+  // of the selected metric. priceCost = sum(unit_price * tokens).
   function typeStackGroups() {
-    const map = new Map();  // label -> { label, tokens: Map, cost: Map, tokenTotal, costTotal, priceCost, priceSeq }
-    // 按日期升序: 单价序列要按时间先后记录各档价格 (恒定一档 / 调价多档)
+    const map = new Map();
+    // Ascending by date so the price sequence follows time order.
     const rows = [...filtered].sort((a, b) => String(a.bill_start).localeCompare(String(b.bill_start)));
     for (const r of rows) {
-      const label = r.platform ? `${r.platform} · ${r.model || '(空)'}` : (r.model || '(空)');
+      const label = r.platform ? `${r.platform} / ${r.model || '(empty)'}` : (r.model || '(empty)');
       let g = map.get(label);
       if (!g) {
         g = { label, tokens: new Map(), cost: new Map(), tokenTotal: 0, costTotal: 0,
-              priceCost: 0, priceSeq: {}, unsnapped: 0 };
+              priceCost: 0, priceSeq: {} };
         map.set(label, g);
       }
       const tokens = Number(r.tokens || 0);
@@ -456,12 +387,11 @@
       g.cost.set(bucket, (g.cost.get(bucket) || 0) + Number(r.cost || 0));
       g.tokenTotal += tokens;
       g.costTotal += Number(r.cost || 0);
-      const sp = snapUnitPrice(r);
-      g.priceCost += sp.value * tokens;
-      if (!sp.snapped) g.unsnapped += 1;
-      if (sp.value > 0) {                  // 单价 0 (无价) 的行不进序列
+      const price = Number(r.unit_price || 0);
+      g.priceCost += price * tokens;
+      if (price > 0) {                     // rows with no price stay out of the sequence
         const seq = g.priceSeq[bucket] || (g.priceSeq[bucket] = []);
-        if (seq.indexOf(sp.value) === -1) seq.push(sp.value);
+        if (seq.indexOf(price) === -1) seq.push(price);
       }
     }
     return [...map.values()]
@@ -472,8 +402,8 @@
 
   function periodKey(d, gran) {
     const p = n => String(n).padStart(2, '0');
-    if (gran === '月') return d.getFullYear() + '-' + p(d.getMonth() + 1);
-    if (gran === '周') {
+    if (gran === 'month') return d.getFullYear() + '-' + p(d.getMonth() + 1);
+    if (gran === 'week') {
       const y = d.getFullYear();
       const week = Math.ceil((d - new Date(y, 0, 1)) / 86400000 / 7);
       return y + '-W' + String(week).padStart(2, '0');
@@ -492,8 +422,8 @@
       if (!minDate || p < minDate) minDate = p;
       if (!maxDate || p > maxDate) maxDate = p;
     }
-    // 逐日推进补齐空缺时段 (无 API 使用的日/周/月计 0)
-    // 注意: 起止必须用原始日期, 不能用时段键 (如 2026-W18 不是合法日期)
+    // Fill gaps day by day (periods without usage count as 0).
+    // Start/end must use raw dates: period keys like 2026-W18 are not valid dates.
     if (!minDate) return { keys: [], values: [] };
     const start = new Date(minDate + 'T00:00:00');
     const end = new Date(maxDate + 'T00:00:00');
@@ -510,7 +440,7 @@
 
   function disposeChart(id) {
     if (charts[id]) {
-      try { charts[id].dispose(); } catch (e) { /* 忽略已释放实例 */ }
+      try { charts[id].dispose(); } catch (e) { /* already disposed */ }
       delete charts[id];
     }
   }
@@ -524,18 +454,18 @@
   function getChart(id, el) {
     if (typeof echarts === 'undefined') return null;
     if (el.dataset.hadContent) {
-      // 空态曾清空容器 (canvas 已销毁), 必须释放死实例并重建
+      // The empty state cleared the container (canvas gone), so recreate the instance.
       el.innerHTML = '';
       delete el.dataset.hadContent;
       disposeChart(id);
     }
-    if (!charts[id]) charts[id] = echarts.init(el, 'apiLedger' + (themeName === 'dark' ? 'Dark' : 'Light'));
+    if (!charts[id]) charts[id] = echarts.init(el, 'apiLedger' + (themeName === 'dark' ? 'Dark' : 'Light'), { locale: 'EN' });
     return charts[id];
   }
 
-  // ═══════════════════════════════════════════
-  // 汇总卡片 (随筛选联动)
-  // ═══════════════════════════════════════════
+  // ===========================================
+  // Summary cards (follow the filters)
+  // ===========================================
   function renderSummary() {
     const totalCost = filtered.reduce((s, r) => s + Number(r.cost || 0), 0);
     const totalTokens = filtered.reduce((s, r) => s + Number(r.tokens || 0), 0);
@@ -548,19 +478,18 @@
     document.getElementById('c-records').textContent = fmtNum(filtered.length);
     document.getElementById('c-models').textContent = fmtNum(models.size);
     document.getElementById('c-platforms').textContent = fmtNum(platforms.size);
-    // 筛选区第一行右侧: 日期范围 · 平台数 · 模型数 (已筛选提示)
     document.getElementById('date-hint').textContent =
-      (dates.length ? dates[0] + ' ~ ' + dates[dates.length - 1] : '暂无数据') +
-      ` · ${platforms.size} 个平台 · ${models.size} 个模型` +
-      (filtered.length !== ROWS.length ? ` (已筛选 ${filtered.length} / 全部 ${ROWS.length} 条)` : '');
+      (dates.length ? dates[0] + ' ~ ' + dates[dates.length - 1] : 'No data') +
+      ` | ${platforms.size} platforms | ${models.size} models` +
+      (filtered.length !== ROWS.length ? ` (filtered ${filtered.length} / ${ROWS.length} rows)` : '');
   }
 
-  // ═══════════════════════════════════════════
-  // 趋势图: 费用 + Tokens 双轴折线 (日/周/月)
-  // ═══════════════════════════════════════════
+  // ===========================================
+  // Trend: cost + tokens on two axes (day/week/month)
+  // ===========================================
   function renderTrend() {
     const el = document.getElementById('chart-trend');
-    if (!filtered.length) { showEmpty(el, '当前筛选无数据'); return; }
+    if (!filtered.length) { showEmpty(el, 'No data for the current filters'); return; }
     const chart = getChart('trend', el);
     if (!chart) return;
 
@@ -579,26 +508,26 @@
         formatter: params => {
           let s = params[0].axisValue;
           for (const p of params) {
-            const v = p.seriesName === '费用' ? fmtCost(p.value) : fmtTokensM(p.value);
+            const v = p.seriesName === 'Cost' ? fmtCost(p.value) : fmtTokensM(p.value);
             s += '<br>' + p.marker + ' ' + p.seriesName + ': ' + v;
           }
           return s;
         },
       },
-      legend: { top: 0, right: 10 },
-      grid: { left: 70, right: 70, top: 34, bottom: 40 },
+      legend: { top: 0, left: 'center' },
+      grid: { left: 70, right: 70, top: 56, bottom: 40 },
       xAxis: { type: 'category', data: keys, axisLabel: { rotate: 45, fontSize: 10 } },
       yAxis: [
-        { type: 'value', name: '费用(¥)', axisLabel: { fontSize: 10 } },
-        { type: 'value', name: 'Tokens(M)', splitLine: { show: false },
-          axisLabel: { fontSize: 10, formatter: v => (v / 1e6).toLocaleString('zh-CN', { maximumFractionDigits: 3 }) } },
+        { type: 'value', name: 'Cost (CNY)', axisLabel: { fontSize: 10 } },
+        { type: 'value', name: 'Tokens (M)', splitLine: { show: false },
+          axisLabel: { fontSize: 10, formatter: v => (v / 1e6).toLocaleString('en-US', { maximumFractionDigits: 3 }) } },
       ],
       series: [
         {
-          name: '费用', type: 'line', data: costVals, smooth: true,
+          name: 'Cost', type: 'line', data: costVals, smooth: true,
           itemStyle: { color: P.cost }, areaStyle: { opacity: 0.08 },
           markLine: avg ? { data: [{ yAxis: avg }], silent: true, symbol: 'none',
-            lineStyle: { type: 'dashed', color: P.avgLine }, label: { formatter: '均值' } } : undefined,
+            lineStyle: { type: 'dashed', color: P.avgLine }, label: { formatter: 'Average' } } : undefined,
         },
         {
           name: 'Tokens', type: 'line', yAxisIndex: 1, data: tokenVals, smooth: true,
@@ -608,17 +537,16 @@
     }, true);
   }
 
-  // ── 模型 Token / 费用对比: 全部模型, 每模型两根横向条 (上 Token 下费用),
-  // 横轴统一为占总量的百分比 (0-100%), 条右侧标注绝对值 ──
+  // Model token / cost comparison: two horizontal bars per model,
+  // axis in percent of total, absolute values on the right.
   function renderModelBar() {
     const el = document.getElementById('chart-model');
-    if (!filtered.length) { showEmpty(el, '当前筛选无数据'); return; }
+    if (!filtered.length) { showEmpty(el, 'No data for the current filters'); return; }
     const chart = getChart('model', el);
     if (!chart) return;
-    // 每模型聚合 tokens + cost, 按 Token 总量降序
     const map = new Map();
     for (const r of filtered) {
-      const k = r.model || '(空)';
+      const k = r.model || '(empty)';
       const g = map.get(k) || { tokens: 0, cost: 0 };
       g.tokens += Number(r.tokens || 0);
       g.cost += Number(r.cost || 0);
@@ -629,7 +557,7 @@
       .sort((a, b) => b.tokens - a.tokens);
     const totalTokens = groups.reduce((s, g) => s + g.tokens, 0);
     const totalCost = groups.reduce((s, g) => s + g.cost, 0);
-    // 类目轴 index 0 在最下方 → 反转使 Token 最多的模型在最上
+    // Category index 0 is at the bottom; reverse so the largest model is on top.
     const rows = [...groups].reverse();
     chart.setOption({
       legend: { bottom: 0 },
@@ -642,11 +570,11 @@
           const cp = totalCost ? (g.cost / totalCost * 100).toFixed(2) : '0.00';
           return '<b>' + g.name + '</b><br>'
                + 'Tokens: ' + fmtTokensM(g.tokens) + ' (' + tp + '%)<br>'
-               + '费用: ' + fmtCost2(g.cost) + ' (' + cp + '%)';
+               + 'Cost: ' + fmtCost2(g.cost) + ' (' + cp + '%)';
         },
       },
       grid: { left: 130, right: 110, top: 20, bottom: 40 },
-      // 横轴上限取最长条附近的整刻度, 不固定 0~100%
+      // Axis max is a nice tick near the longest bar, not always 0-100%.
       xAxis: (() => {
         const maxPct = rows.reduce((m, g) =>
           Math.max(m, totalTokens ? g.tokens / totalTokens * 100 : 0,
@@ -666,7 +594,7 @@
                    formatter: p => fmtTokensM(rows[p.dataIndex].tokens), fontSize: 10 },
         },
         {
-          name: '费用', type: 'bar',
+          name: 'Cost', type: 'bar',
           data: rows.map(g => totalCost ? g.cost / totalCost * 100 : 0),
           itemStyle: { color: P.cost, borderRadius: [0, 4, 4, 0] },
           barMaxWidth: 12,
@@ -677,25 +605,24 @@
     }, true);
   }
 
-  // ── 模型构成对比: 平台×模型 100% 堆叠条形图 ──
+  // Model composition: platform x model 100% stacked bars.
   function renderStack() {
     const el = document.getElementById('chart-stack');
     const metric = pieMetric.stack;
     const groups = typeStackGroups();
-    if (!groups.length) { showEmpty(el, '当前筛选无数据'); return; }
+    if (!groups.length) { showEmpty(el, 'No data for the current filters'); return; }
     const chart = getChart('stack', el);
     if (!chart) return;
 
     const bucketMap = metric === 'cost' ? 'cost' : 'tokens';
     const totalOf = g => metric === 'cost' ? g.costTotal : g.tokenTotal;
-    // 均价 (元/1M tokens): Σ(每行吸附后单价 × tokens) / Σtokens, 按行日期取当期官方价,
-    // 跨价格时段自然得到加权均价; 无官方价的行走原始单价 (等价于 费用/tokens)
+    // Weighted average price (CNY per 1M tokens): sum(unit_price * tokens) / sum(tokens).
     const avgRateText = g => {
       if (!g.tokenTotal) return '';
       const rate = g.priceCost / g.tokenTotal;
-      return '¥' + rate.toLocaleString('zh-CN', { minimumFractionDigits: 3, maximumFractionDigits: 3 }) + '/M';
+      return 'CNY ' + rate.toLocaleString('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 3 }) + '/M';
     };
-    // 行内最顶端的非零段右侧显示均价标签 (只在该段处标注一次)
+    // Show the average label once, next to the topmost non-zero segment.
     const labelFor = (bucketIdx) => ({
       show: true, position: 'right', fontSize: 11, color: P.note,
       formatter: p => {
@@ -708,9 +635,9 @@
       },
     });
 
-    // 三段百分比堆叠 (每行合计 100)
+    // Three percentage segments per row (each row totals 100).
     const series = TYPE_BUCKETS.map((b, i) => ({
-      name: b.key, type: 'bar', stack: 'total', barMaxWidth: 22,
+      name: b.label, type: 'bar', stack: 'total', barMaxWidth: 22,
       data: groups.map(g => {
         const v = g[bucketMap].get(b.key) || 0;
         const total = totalOf(g);
@@ -727,22 +654,18 @@
         formatter: params => {
           let s = params[0].axisValue;
           for (const p of params) {
-            // series data 已 reverse, 用反序索引取回原始分组
+            // Series data was reversed; use the reverse index to get the original group.
             const g = groups[groups.length - 1 - p.dataIndex];
-            const abs = g ? (g[bucketMap].get(p.seriesName) || 0) : 0;
+            const bucketKey = TYPE_BUCKETS[p.seriesIndex] ? TYPE_BUCKETS[p.seriesIndex].key : p.seriesName;
+            const abs = g ? (g[bucketMap].get(bucketKey) || 0) : 0;
             s += '<br>' + p.marker + ' ' + p.seriesName + ': ' + fmtMetric(abs, metric) + ' (' + p.value + '%)';
-            // 该类型的单价 (吸附后): 区间内恒定显示单值, 期间调价显示 "¥2→¥5"
-            const rate = g ? fmtRateSeq(g.priceSeq[p.seriesName]) : '';
-            if (rate) s += ' <span style="color:' + P.tipMuted + '">· 单价 ' + rate + '</span>';
+            // Unit price: one value when constant, "CNY 2 -> CNY 5" across a price change.
+            const rate = g ? fmtRateSeq(g.priceSeq[bucketKey]) : '';
+            if (rate) s += ' <span style="color:' + P.tipMuted + '">| Unit price ' + rate + '</span>';
           }
-          // 末尾追加整行均价 (含未吸附行时说明数量)
           const g = groups[groups.length - 1 - params[0].dataIndex];
           if (!g) return s;
-          let line = '<br><span style="color:' + P.tipMuted + '">均价: ' + avgRateText(g) + '</span>';
-          if (g.unsnapped) {
-            line += '<br><span style="color:' + P.warn + '">' + g.unsnapped + ' 行单价未匹配预设官方价 (标 *)</span>';
-          }
-          return s + line;
+          return s + '<br><span style="color:' + P.tipMuted + '">Average: ' + avgRateText(g) + '</span>';
         },
       },
       legend: { bottom: 0 },
@@ -753,38 +676,38 @@
     }, true);
   }
 
-  // ── 各模型每日均价曲线: 每模型一条线, 逐日展开 renderStack 的均价 ──
-  // y = 当日 Σ(吸附后单价 × tokens) / Σtokens (元/1M tokens), 与「模型构成对比」
-  // 的均价同口径, 只是按日拆开; 无单价的记录 (单价 0) 分子分母都不计入, 避免
-  // 缺价被当成 0 拉低均价。同模型跨平台价格可能不同 → 该模型按 "平台 · 模型"
-  // 拆成多条线, 不混成一条; 当日该模型无记录则为空点 (线在此处断开)。
+  // Daily average price per model: one line per model, expanding renderStack's average by day.
+  // y = daily sum(unit_price * tokens) / sum(tokens) (CNY per 1M tokens), the same
+  // basis as the composition chart, split by day. Rows without a price count in
+  // neither numerator nor denominator. A model used on several platforms becomes
+  // one line per platform; days without data are gaps (lines break there).
   function renderAvgPrice() {
     const el = document.getElementById('chart-price');
-    if (!filtered.length) { showEmpty(el, '当前筛选无数据'); return; }
+    if (!filtered.length) { showEmpty(el, 'No data for the current filters'); return; }
 
-    // 模型 → 平台集合: 仅当该模型出现多个平台时才在标签上带平台前缀
+    // Only prefix the platform when a model appears on more than one platform.
     const platforms = new Map();
     for (const r of filtered) {
-      const m = r.model || '(空)';
+      const m = r.model || '(empty)';
       if (!platforms.has(m)) platforms.set(m, new Set());
       platforms.get(m).add(r.platform || '');
     }
     const labelOf = r => {
-      const m = r.model || '(空)';
-      return (platforms.get(m).size > 1 && r.platform) ? r.platform + ' · ' + m : m;
+      const m = r.model || '(empty)';
+      return (platforms.get(m).size > 1 && r.platform) ? r.platform + ' / ' + m : m;
     };
 
     const dates = new Set();
-    const seriesMap = new Map();   // label -> Map(日期 -> {num, den, buckets})
+    const seriesMap = new Map();   // label -> Map(date -> {num, den, buckets})
     for (const r of filtered) {
       const tokens = Number(r.tokens || 0);
       const d = String(r.bill_start).slice(0, 10);
-      const price = snapUnitPrice(r).value;
+      const price = Number(r.unit_price || 0);
       if (!d || !(tokens > 0) || !(price > 0)) continue;
       const label = labelOf(r);
       let byDate = seriesMap.get(label);
       if (!byDate) { byDate = new Map(); seriesMap.set(label, byDate); }
-      // buckets: 与 TYPE_BUCKETS 同序的当日 token 量, 供 tooltip 展示各类型占比
+      // Buckets follow TYPE_BUCKETS order; the tooltip shows their shares.
       const g = byDate.get(d) || { num: 0, den: 0, buckets: [] };
       g.num += price * tokens;
       g.den += tokens;
@@ -793,27 +716,27 @@
       byDate.set(d, g);
       dates.add(d);
     }
-    if (!dates.size) { showEmpty(el, '当前筛选无可计算单价的记录'); return; }
+    if (!dates.size) { showEmpty(el, 'No rows with a price for the current filters'); return; }
 
     const chart = getChart('price', el);
     if (!chart) return;
     const dateList = [...dates].sort();
-    // 线序按 tokens 总量降序 (与图例及其余图表口径一致)
+    // Lines ordered by token total descending, consistent with the legend and charts.
     const lines = [...seriesMap.entries()]
       .map(([name, byDate]) => ({ name, byDate,
         tokens: [...byDate.values()].reduce((s, g) => s + g.den, 0) }))
       .sort((a, b) => b.tokens - a.tokens);
-    const fmtPrice3 = v => '¥' + Number(v).toLocaleString('zh-CN', { minimumFractionDigits: 3, maximumFractionDigits: 3 }) + '/M';
-    // tooltip 追加行: 该模型当日的 token 类型占比 (%, 2 位小数); 与均价同口径, 只计有单价的 tokens
+    const fmtPrice3 = v => 'CNY ' + Number(v).toLocaleString('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 3 }) + '/M';
+    // Tooltip extra line: this model's token type shares for the day (2 decimals).
     const shareLine = g => {
       if (!g || !g.den) return '';
       const parts = TYPE_BUCKETS
-        .map((b, i) => ({ key: b.key, n: g.buckets[i] || 0 }))
+        .map((b, i) => ({ label: b.label, n: g.buckets[i] || 0 }))
         .filter(x => x.n > 0)
-        .map(x => x.key + ' ' + (x.n / g.den * 100).toFixed(2) + '%');
-      return parts.length ? '<br><span style="color:' + P.tipMuted + ';">　' + parts.join(' · ') + '</span>' : '';
+        .map(x => x.label + ' ' + (x.n / g.den * 100).toFixed(2) + '%');
+      return parts.length ? '<br><span style="color:' + P.tipMuted + ';"> ' + parts.join(' | ') + '</span>' : '';
     };
-    // 图例平铺成若干行 (不翻页), 行数随容器宽度变化 → 据此预留底部空间, 否则会压住日期标签
+    // The legend wraps to multiple rows; reserve bottom space so it does not cover date labels.
     const legendRows = Math.ceil(lines.length /
       Math.max(1, Math.floor((el.clientWidth || 900) / 170)));
 
@@ -823,7 +746,7 @@
         formatter: params => {
           const date = params[0].axisValue;
           let s = date;
-          for (const p of params) {           // 当日无数据的线 (空点) 不列入
+          for (const p of params) {           // skip lines with no data on this day
             if (p.value == null) continue;
             s += '<br>' + p.marker + ' ' + p.seriesName + ': ' + fmtPrice3(p.value);
             const byDate = seriesMap.get(p.seriesName);
@@ -832,14 +755,13 @@
           return s;
         },
       },
-      // 图例平铺成多行; 文字色留给主题 (浅色深字 / 暗色浅字), 这里只管字号
+      // Legend text color comes from the theme; only the font size is set here.
       legend: { bottom: 0, type: 'plain', itemGap: 10, textStyle: { fontSize: 11 } },
       grid: { left: 70, right: 30, top: 46, bottom: 52 + legendRows * 22 },
       xAxis: { type: 'category', data: dateList, axisLabel: { rotate: 45, fontSize: 10 } },
-      yAxis: { type: 'value', name: '均价(¥/M)',
-               // 刻度去掉多余小数 (10 → "10", 0.5 → "0.5")
+      yAxis: { type: 'value', name: 'Avg price (CNY/M)',
                axisLabel: { fontSize: 10,
-                 formatter: v => Number(v).toLocaleString('zh-CN', { maximumFractionDigits: 3 }) } },
+                 formatter: v => Number(v).toLocaleString('en-US', { maximumFractionDigits: 3 }) } },
       series: lines.map((l, i) => ({
         name: l.name, type: 'line', smooth: true, connectNulls: false,
         symbolSize: 5,
@@ -859,9 +781,9 @@
     renderAvgPrice();
   }
 
-  // ═══════════════════════════════════════════
-  // 筛选
-  // ═══════════════════════════════════════════
+  // ===========================================
+  // Filters
+  // ===========================================
   function applyFilters() {
     const start = document.getElementById('f-start').value;
     const end = document.getElementById('f-end').value;
@@ -890,38 +812,38 @@
     ['f-platform', 'f-project', 'f-model', 'f-type'].forEach(id => {
       const s = document.getElementById(id); s.selectedIndex = 0;
     });
-    applyPreset('1m');  // 默认区间: 近1月
+    applyPreset('1m');  // default range: last month
   }
 
   function buildOptions(selId, key) {
     const set = new Set(ROWS.map(r => r[key]).filter(Boolean));
     const sel = document.getElementById(selId);
-    for (const v of [...set].sort((a, b) => String(a).localeCompare(String(b), 'zh-CN'))) {
+    for (const v of [...set].sort((a, b) => String(a).localeCompare(String(b), 'en-US'))) {
       const opt = document.createElement('option');
-      opt.value = v; opt.textContent = v;
+      opt.value = v;
+      opt.textContent = key === 'type' ? typeLabel(v) : v;
       sel.appendChild(opt);
     }
   }
 
-  // ═══════════════════════════════════════════
-  // 明细表: 默认复合排序 (平台→项目→日期) / 单列排序 / 翻页
-  // ═══════════════════════════════════════════
+  // ===========================================
+  // Detail table: default compound sort (platform, project, date) / column sort / paging
+  // ===========================================
   function sortedRows() {
     const rows = [...filtered];
     if (sortKey === null) {
-      // 默认排序: 时间 → 平台 → 项目 → 模型 → 类型
       rows.sort((a, b) =>
         String(a.bill_start).localeCompare(String(b.bill_start)) ||
-        String(a.platform).localeCompare(String(b.platform), 'zh-CN') ||
-        String(a.project).localeCompare(String(b.project), 'zh-CN') ||
-        String(a.model).localeCompare(String(b.model), 'zh-CN') ||
-        String(a.type).localeCompare(String(b.type), 'zh-CN'));
+        String(a.platform).localeCompare(String(b.platform), 'en-US') ||
+        String(a.project).localeCompare(String(b.project), 'en-US') ||
+        String(a.model).localeCompare(String(b.model), 'en-US') ||
+        String(a.type).localeCompare(String(b.type), 'en-US'));
       return rows;
     }
     rows.sort((a, b) => {
       const va = a[sortKey], vb = b[sortKey];
       if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * sortDir;
-      return String(va || '').localeCompare(String(vb || ''), 'zh-CN') * sortDir;
+      return String(va || '').localeCompare(String(vb || ''), 'en-US') * sortDir;
     });
     return rows;
   }
@@ -932,15 +854,10 @@
   }
 
   function renderTable() {
-    const rowsAll = sortedRows();
-    // 只看未吸附: 与 * 标记同口径 (有单价且未匹配预设官方价), 仅作用于明细表
-    const rows = onlyUnsnapped
-      ? rowsAll.filter(r => r.unit_price && !snapUnitPrice(r).snapped)
-      : rowsAll;
+    const rows = sortedRows();
     const totalPages = pageSize === Infinity ? 1 : Math.max(1, Math.ceil(rows.length / pageSize));
     page = Math.max(1, Math.min(page, totalPages));
-    document.getElementById('table-count').textContent =
-      onlyUnsnapped ? `未吸附 ${rows.length} / 共 ${rowsAll.length} 条` : `共 ${rows.length} 条`;
+    document.getElementById('table-count').textContent = `${rows.length} rows`;
     document.getElementById('page-info').textContent = `${page} / ${totalPages}`;
     document.getElementById('btn-prev').disabled = page <= 1;
     document.getElementById('btn-next').disabled = page >= totalPages;
@@ -951,18 +868,18 @@
     tbody.innerHTML = '';
     if (!slice.length) {
       const tr = document.createElement('tr');
-      tr.innerHTML = '<td colspan="9" style="text-align:center;color:var(--empty);padding:24px;">无匹配数据</td>';
+      tr.innerHTML = '<td colspan="9" style="text-align:center;color:var(--empty);padding:24px;">No matching data</td>';
       tbody.appendChild(tr);
       return;
     }
     for (const r of slice) {
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td>${String(r.bill_start).slice(0, 16)}</td>
+        <td>${String(r.bill_start).slice(0, 10)}</td>
         <td>${r.platform}</td>
         <td>${r.project}</td>
         <td>${r.model}</td>
-        <td>${r.type}</td>
+        <td>${typeLabel(r.type)}</td>
         <td class="num">${fmtNum(r.tokens)}</td>
         <td class="num">${fmtCost(r.cost)}</td>
         <td class="num">${priceCell(r)}</td>
@@ -971,10 +888,10 @@
     }
   }
 
-  // ═══════════════════════════════════════════
-  // 事件绑定
-  // ═══════════════════════════════════════════
-  // 表头排序
+  // ===========================================
+  // Event wiring
+  // ===========================================
+  // Header sorting
   document.querySelectorAll('th[data-k]').forEach(th => {
     th.addEventListener('click', () => {
       const k = th.dataset.k;
@@ -983,14 +900,14 @@
       document.querySelectorAll('th .arrow').forEach(a => a.remove());
       const arrow = document.createElement('span');
       arrow.className = 'arrow';
-      arrow.textContent = sortDir === -1 ? ' ↓' : ' ↑';
+      arrow.textContent = sortDir === -1 ? ' v' : ' ^';
       th.appendChild(arrow);
       page = 1;
       renderTable();
     });
   });
 
-  // 趋势粒度切换
+  // Trend granularity
   document.querySelectorAll('#tabs-gran button').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('#tabs-gran button').forEach(b => b.classList.remove('active'));
@@ -1000,7 +917,7 @@
     });
   });
 
-  // 堆叠图指标切换
+  // Stack metric switch
   [['tabs-stack', 'stack', renderStack]].forEach(([tabsId, key, render]) => {
     document.querySelectorAll('#' + tabsId + ' button').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -1012,21 +929,14 @@
     });
   });
 
-  // 明细表: 只看未吸附 (切换后重置到第一页)
-  document.getElementById('f-unsnapped').addEventListener('change', e => {
-    onlyUnsnapped = e.target.checked;
-    page = 1;
-    renderTable();
-  });
-
-  // 明细表: 每页条数 ("全部" = 不分页)
+  // Rows per page ("all" = no paging)
   document.getElementById('f-page-size').addEventListener('change', e => {
     pageSize = e.target.value === 'all' ? Infinity : Number(e.target.value);
     page = 1;
     renderTable();
   });
 
-  // 快速区间预设: 以数据中最晚日期为基准向前推; 默认 近1月
+  // Quick ranges are relative to the latest date in the data; default is last month.
   function fmtDate(d) {
     const p = n => String(n).padStart(2, '0');
     return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
@@ -1046,7 +956,7 @@
   }
 
   function applyPreset(range) {
-    if (range === 'all') {  // 全部: 清空日期区间
+    if (range === 'all') {  // clear the date range
       document.getElementById('f-start').value = '';
       document.getElementById('f-end').value = '';
       markPreset(range);
@@ -1062,7 +972,7 @@
       const months = { '1m': 1, '3m': 3, '6m': 6, '1y': 12 }[range] || 1;
       d.setMonth(d.getMonth() - months);
     }
-    d.setDate(d.getDate() + 1);  // 补回端点, 区间恰好 N 天/月
+    d.setDate(d.getDate() + 1);  // include the end point
     document.getElementById('f-start').value = fmtDate(d);
     document.getElementById('f-end').value = maxDate;
     markPreset(range);
@@ -1073,10 +983,10 @@
     btn.addEventListener('click', () => applyPreset(btn.dataset.range));
   });
 
-  // 筛选: 下拉/日期即时生效, 关键词回车或点按钮
+  // Filters: selects and dates apply immediately; keyword applies on Enter or Apply.
   ['f-start', 'f-end', 'f-platform', 'f-project', 'f-model', 'f-type'].forEach(id => {
     document.getElementById(id).addEventListener('change', () => {
-      if (id === 'f-start' || id === 'f-end') markPreset(null);  // 手动改日期取消预设高亮
+      if (id === 'f-start' || id === 'f-end') markPreset(null);  // manual dates clear the preset
       applyFilters();
     });
   });
@@ -1088,12 +998,12 @@
 
   window.addEventListener('resize', () => {
     Object.values(charts).forEach(c => c.resize());
-    renderAvgPrice();   // 图例换行数 / 底部留白随容器宽度变化, 需重算
+    renderAvgPrice();   // legend rows and bottom padding depend on container width
   });
 
-  // ═══════════════════════════════════════════
-  // 初始化
-  // ═══════════════════════════════════════════
+  // ===========================================
+  // Initialization
+  // ===========================================
   function renderAll() {
     renderSummary();
     renderCharts();
@@ -1103,11 +1013,10 @@
   buildOptions('f-project', 'project');
   buildOptions('f-model', 'model');
   buildOptions('f-type', 'type');
-  // 主题: 头部脚本已按 (手动选择 → 系统偏好) 定好属性, 这里同步 JS 状态与按钮文案;
-  // 必须在首次渲染图表之前, 否则图表实例会按默认主题创建
+  // The header script chose the theme; sync JS state before the first chart render.
   setTheme(document.documentElement.dataset.theme);
   document.getElementById('btn-theme').addEventListener('click', toggleTheme);
-  applyPreset('1m');  // 初始默认区间: 近1月
+  applyPreset('1m');  // initial range: last month
   </script>
 </body>
 </html>

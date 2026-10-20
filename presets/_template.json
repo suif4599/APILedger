@@ -1,0 +1,45 @@
+{
+  "name": "yourplatform",
+  "match_filename": ["yourplatform"],
+  "match_headers": ["your column 1", "your column 2"],
+  "column_mapping": {
+    "bill_start": ["start time", "utc_date"],
+    "platform": ["platform"],
+    "project": ["project", "resource name", "api_key_name"],
+    "model": ["model"],
+    "type": ["type"],
+    "tokens": ["tokens", "token", "amount"],
+    "cost": ["cost", "amount"],
+    "unit_price": ["unit price", "price"]
+  },
+  "defaults": {
+    "platform": "YourPlatform"
+  },
+  "type_map": {
+    "input": "input",
+    "output": "output",
+    "cached_input": "cache_input"
+  },
+  "skip_types": [],
+  "computed": {
+    "cost": "unit_price * tokens"
+  },
+  "model_map": {
+    "platform-model-name": "Unified-Model-Name"
+  },
+  "parse": {
+    "skip_if": {
+      "status": ["pending"]
+    },
+    "extract": {
+      "column": "description",
+      "pattern": "^(\\S+)\\s*:\\s*([\\d,]+)\\s*tokens?\\s*$",
+      "group_type": 1,
+      "group_tokens": 2
+    },
+    "date_format": {
+      "field": "bill_start",
+      "from": "yyyyMMdd"
+    }
+  }
+}

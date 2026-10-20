@@ -1,0 +1,40 @@
+{
+  "name": "deepseek",
+  "match_filename": [],
+  "match_headers": ["start_time_iso", "price", "amount"],
+  "column_mapping": {
+    "bill_start": ["start_time_iso", "utc_date"],
+    "model": ["model"],
+    "project": ["api_key_name"],
+    "type": ["type"],
+    "tokens": ["amount"],
+    "unit_price": ["price"]
+  },
+  "defaults": {
+    "platform": "DeepSeek"
+  },
+  "type_map": {
+    "input_cache_hit_tokens": "cache_input",
+    "input_cache_miss_tokens": "input",
+    "output_tokens": "output"
+  },
+  "computed": {
+    "cost": "unit_price * tokens",
+    "unit_price": "unit_price * 1000000"
+  },
+  "model_map": {
+    "deepseek-chat": "DeepSeek-V3",
+    "deepseek-reasoner": "DeepSeek-R1",
+    "deepseek-v4-flash": "DeepSeek-V4-Flash",
+    "deepseek-v4-pro": "DeepSeek-V4-Pro"
+  },
+  "parse": {
+    "skip_if": {
+      "type": ["request_count"]
+    },
+    "date_format": {
+      "field": "bill_start",
+      "from": "yyyyMMdd"
+    }
+  }
+}

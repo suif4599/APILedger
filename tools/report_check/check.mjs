@@ -7,7 +7,7 @@
  *         1. 四个图表容器都拿到了 ECharts option (脚本没崩、没改名)
  *         2. 浅色/暗色两套主题都注册了不透明画布背景, 且同一轮渲染里四图同主题
  *         3. 切到暗色后: 使用暗色画布 + 暗色系列配色, option 里不残留浅色硬编码
- *         4. 均价曲线每个点都落在当日该模型原始单价范围 (含 5% 吸附容差) 内
+ *         4. 均价曲线每个点都落在当日该模型原始单价范围内
  *         5. 均价 tooltip 的类型占比合计 100.00% 且保留 2 位小数
  *         6. 各图表 tooltip 文案不含 undefined / NaN
  *         7. 空态 (无筛选结果 / 全零单价) 不抛异常, 且给出对应的空态提示
@@ -145,7 +145,7 @@ if (!ROWS.length) {
   ok(lightLabels.length > 0 && lightLabels.every(c => c === PALETTE.light.label),
      '浅色下数值标注沿用默认色 (加暗色不该改动浅色观感)', [`实际: ${lightLabels.join(', ')}`]);
 
-  // ── 均价曲线: 每个点必须是当日该模型原始单价的加权平均 (吸附只在 ±5% 内偏移) ──
+  // ── 均价曲线: 每个点必须是当日该模型原始单价的加权平均 ──
   const priceOpt = env.options['chart-price'];
   if (!priceOpt) {
     ok(false, '均价曲线未渲染, 无法校验');
@@ -171,13 +171,13 @@ if (!ROWS.length) {
         const rows = rawRows(s.name, date);
         if (!rows.length) { bad.push(`${s.name} ${date}: 找不到对应原始记录`); return; }
         const prices = rows.map(r => Number(r.unit_price));
-        const lo = Math.min(...prices) * 0.95, hi = Math.max(...prices) * 1.05;
+        const lo = Math.min(...prices), hi = Math.max(...prices);
         if (!Number.isFinite(v) || v <= 0 || v < lo - 1e-9 || v > hi + 1e-9) {
           bad.push(`${s.name} ${date}: 均价 ${v} 超出原始单价 [${lo.toFixed(4)}, ${hi.toFixed(4)}]`);
         }
       });
     });
-    ok(bad.length === 0, `均价曲线 ${points} 个点均落在当日原始单价范围内 (±5% 吸附容差)`, bad);
+    ok(bad.length === 0, `均价曲线 ${points} 个点均落在当日原始单价范围内`, bad);
 
     // ── tooltip 的类型占比: 合计 100.00%, 保留 2 位小数 ──
     const tip = priceOpt.tooltip.formatter;
@@ -227,6 +227,13 @@ if (!ROWS.length) {
     }
   }
   ok(textBad.length === 0, '各图表 tooltip 文案不含 undefined / NaN', textBad);
+
+  // ── 趋势图图例独占顶部一行, 不与两个 Y 轴名称重叠 ──
+  const trendOpt = env.options['chart-trend'] || {};
+  ok(trendOpt.legend && trendOpt.legend.top === 0 &&
+     Number(trendOpt.grid && trendOpt.grid.top) >= 50,
+     '趋势图图例独占顶部一行, 不与坐标轴名称重叠',
+     [`legend.top=${trendOpt.legend && trendOpt.legend.top}, grid.top=${trendOpt.grid && trendOpt.grid.top}`]);
 }
 
 // ═══════════════════════════════════════════
@@ -249,8 +256,8 @@ if (!darkRun.ROWS.length) {
      [`未重建: ${CHART_IDS.filter(id => !darkThemed.includes(id)).join(', ') || '无'}`]);
   ok(darkEnv.document.documentElement.dataset.theme === 'dark', '主题选择写到 <html data-theme>');
   ok(darkEnv.localStorage.getItem('apiledger-theme') === 'dark', '主题选择被记住 (localStorage)');
-  ok(String(darkEnv.getEl('btn-theme').textContent).includes('浅色'),
-     '主题按钮文案切到"浅色" (点击可切回)', [`实际: ${darkEnv.getEl('btn-theme').textContent}`]);
+  ok(String(darkEnv.getEl('btn-theme').textContent).includes('Light'),
+     '主题按钮文案切到"Light" (点击可切回)', [`实际: ${darkEnv.getEl('btn-theme').textContent}`]);
 
   const dOpt = darkEnv.options['chart-price'];
   if (!dOpt) {
@@ -281,9 +288,9 @@ if (!darkRun.ROWS.length) {
 console.log('\n── 空态 ──');
 
 const CASES = [
-  { name: '筛选无结果', tail: 'filtered = []; renderCharts();', expect: '当前筛选无数据' },
+  { name: '筛选无结果', tail: 'filtered = []; renderCharts();', expect: 'No data for the current filters' },
   { name: '有记录但全无单价', tail: 'filtered = ROWS.map(r => ({ ...r, unit_price: 0 })); renderCharts();',
-    expect: '当前筛选无可计算单价的记录' },
+    expect: 'No rows with a price for the current filters' },
 ];
 
 for (const c of CASES) {
