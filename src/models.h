@@ -6,7 +6,7 @@
 
 inline const std::vector<std::string> STANDARD_FIELDS = {
     "bill_start", "platform", "project", "model",
-    "type", "tokens", "cost", "unit_price",
+    "type", "tokens", "cost", "unit_price", "currency",
 };
 
 struct Record {
@@ -19,6 +19,7 @@ struct Record {
     double cost = 0.0;
     double unit_price = 0.0;
     std::string source_file;
+    std::string currency;
 };
 
 struct StoredRecord {
@@ -32,6 +33,7 @@ struct StoredRecord {
     double cost = 0.0;
     double unit_price = 0.0;
     std::string source_file;
+    std::string currency;
 };
 
 using DateRange = std::pair<std::string, std::string>;

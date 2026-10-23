@@ -1,9 +1,14 @@
 #include "csv.h"
 
-#include <iconv.h>
-
 #include <cerrno>
+#include <cstdlib>
 #include <optional>
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#else
+#include <iconv.h>
+#endif
 
 #include "util.h"
 
@@ -49,7 +54,33 @@ bool valid_utf8(const std::string& text) {
     return true;
 }
 
+#ifdef __EMSCRIPTEN__
+EM_JS(int, js_decode_to_utf8, (const char* data, int len, const char* encoding, char** out), {
+    const bytes = HEAPU8.subarray(data, data + len);
+    let text;
+    try {
+        text = new TextDecoder(UTF8ToString(encoding), { fatal: true }).decode(bytes);
+    } catch (error) {
+        return -1;
+    }
+    const size = lengthBytesUTF8(text) + 1;
+    const ptr = _malloc(size);
+    stringToUTF8(text, ptr, size);
+    HEAP32[out >> 2] = ptr;
+    return size - 1;
+});
+#endif
+
 std::optional<std::string> iconv_to_utf8(const std::string& input, const char* from) {
+#ifdef __EMSCRIPTEN__
+    char* output = nullptr;
+    const int length =
+        js_decode_to_utf8(input.data(), static_cast<int>(input.size()), from, &output);
+    if (length < 0 || !output) return std::nullopt;
+    std::string result(output, static_cast<size_t>(length));
+    std::free(output);
+    return result;
+#else
     iconv_t handle = iconv_open("UTF-8", from);
     if (handle == reinterpret_cast<iconv_t>(-1)) return std::nullopt;
 
@@ -79,6 +110,7 @@ std::optional<std::string> iconv_to_utf8(const std::string& input, const char* f
     iconv_close(handle);
     output.resize(used);
     return output;
+#endif
 }
 
 bool row_is_empty(const std::vector<std::string>& row) {

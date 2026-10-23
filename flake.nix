@@ -14,6 +14,7 @@
       packages = forAllSystems (pkgs: {
         default = pkgs.callPackage ./nix/package.nix { };
         apiledger = pkgs.callPackage ./nix/package.nix { };
+        web = pkgs.callPackage ./nix/web.nix { };
       });
 
       homeManagerModules.default = import ./nix/hm.nix;
@@ -21,7 +22,7 @@
 
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
-          packages = with pkgs; [ cmake ninja curl nodejs ];
+          packages = with pkgs; [ cmake ninja curl nodejs emscripten ];
         };
       });
     };

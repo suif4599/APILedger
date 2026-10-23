@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DS Visualizer</title>
+<script>
+  try {
+    const t = localStorage.getItem('theme');
+    if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+  } catch (e) {}
+</script>
+<link rel="stylesheet" href="/ui/ak-ui.css">
+<link rel="stylesheet" href="/ui/tokens.css">
+<link rel="stylesheet" href="/ui/base.css">
+<link rel="stylesheet" href="/ui/shell.css">
+<link rel="stylesheet" href="styles.css">
+<script defer src="/ui/shell.js"></script>
+<script src="vendor/echarts.min.js"></script>
+<script src="report.js"></script>
+</head>
+<body>
+<tool-shell title="DS Visualizer"></tool-shell>
+<main class="page">
+  <header class="hero">
+    <p class="kicker">Billing</p>
+    <h1 class="display">DS Visualizer</h1>
+    <p class="hero-meta">Import API platform bills · one local ledger · optional cloud history</p>
+  </header>
+
+  <section class="panel tool-panel">
+    <h2 class="section-title">Import</h2>
+    <p class="hint">Bill archive (.zip) or a single .csv / .xlsx</p>
+    <div class="import-actions">
+      <button id="import" class="primary" type="button" disabled>Import bill</button>
+    </div>
+    <input id="file" type="file" accept=".zip,.csv,.xlsx" hidden>
+    <p id="import-status" class="import-status mono"></p>
+    <ul id="skipped" class="skipped" hidden></ul>
+  </section>
+
+  <section class="panel tool-panel">
+    <h2 class="section-title">History</h2>
+    <div class="cloud-row">
+      <span id="cloud-status">History is stored in this browser only.</span>
+      <label id="cloud-control" class="toggle" hidden>
+        <input id="cloud-toggle" type="checkbox"> Cloud sync
+      </label>
+    </div>
+    <div class="delete-row">
+      <div class="delete-field">
+        <label for="d-start">Delete from</label>
+        <input id="d-start" type="date">
+      </div>
+      <div class="delete-field">
+        <label for="d-end">To</label>
+        <input id="d-end" type="date">
+      </div>
+      <button id="delete-range" class="danger" type="button" disabled>Delete period</button>
+    </div>
+    <p class="hint">Deletes the selected period from this browser and, when cloud sync is on, from the cloud.</p>
+    <p id="delete-status" class="import-status mono"></p>
+  </section>
+
+  <p id="error" class="msg" hidden></p>
+
+  <div class="cards">
+    <div class="card"><div class="label">Total cost<span class="currency-note" data-currency-note></span></div><div class="value cost" id="c-cost">-</div></div>
+    <div class="card"><div class="label">Total tokens</div><div class="value tokens" id="c-tokens">-</div></div>
+    <div class="card"><div class="label">Records</div><div class="value" id="c-records">-</div></div>
+    <div class="card"><div class="label">Models</div><div class="value" id="c-models">-</div></div>
+    <div class="card"><div class="label">Platforms</div><div class="value" id="c-platforms">-</div></div>
+  </div>
+  <p class="date-hint mono" id="date-hint"></p>
+
+  <div class="currency-row" id="currency-row" hidden>
+    <span class="currency-label">Currency</span>
+    <div class="currency-tabs" id="currency-tabs"></div>
+  </div>
+
+  <section class="panel filters">
+    <div class="filter-row">
+      <div class="filter-item">
+        <label for="f-start">From</label>
+        <input id="f-start" type="date">
+      </div>
+      <div class="filter-item">
+        <label for="f-end">To</label>
+        <input id="f-end" type="date">
+      </div>
+      <div class="filter-item">
+        <label for="f-platform">Platform</label>
+        <select id="f-platform"><option value="">All</option></select>
+      </div>
+      <div class="filter-item">
+        <label for="f-project">Project</label>
+        <select id="f-project"><option value="">All</option></select>
+      </div>
+      <div class="filter-item">
+        <label for="f-model">Model</label>
+        <select id="f-model"><option value="">All</option></select>
+      </div>
+      <div class="filter-item">
+        <label for="f-type">Type</label>
+        <select id="f-type"><option value="">All</option></select>
+      </div>
+    </div>
+    <div class="filter-row">
+      <div class="filter-item filter-grow">
+        <label for="f-keyword">Keyword</label>
+        <input id="f-keyword" type="search" placeholder="Model, project, platform or type">
+      </div>
+      <div class="filter-item">
+        <label>Quick range</label>
+        <div class="presets" id="quick-presets">
+          <button type="button" class="preset" data-range="7d">7D</button>
+          <button type="button" class="preset" data-range="1m">1M</button>
+          <button type="button" class="preset" data-range="3m">3M</button>
+          <button type="button" class="preset" data-range="6m">6M</button>
+          <button type="button" class="preset" data-range="1y">1Y</button>
+          <button type="button" class="preset" data-range="all">All</button>
+        </div>
+      </div>
+      <div class="filter-item filter-actions">
+        <button id="btn-apply" class="primary" type="button">Apply</button>
+        <button id="btn-reset" class="secondary" type="button">Reset</button>
+      </div>
+    </div>
+  </section>
+
+  <div class="chart-grid">
+    <div class="chart-box wide">
+      <h3>Usage trend <span class="hint">(cost / tokens, dual axis)</span><span class="currency-note" data-currency-note></span></h3>
+      <div class="chart-tabs" id="tabs-gran">
+        <button type="button" data-g="day" class="active">Day</button>
+        <button type="button" data-g="week">Week</button>
+        <button type="button" data-g="month">Month</button>
+      </div>
+      <div id="chart-trend" class="chart"></div>
+    </div>
+    <div class="chart-box align-with-tabs">
+      <h3>Model token / cost comparison<span class="currency-note" data-currency-note></span></h3>
+      <div id="chart-model" class="chart"></div>
+    </div>
+    <div class="chart-box">
+      <h3>Model token / cost composition<span class="currency-note" data-currency-note></span></h3>
+      <div class="chart-tabs" id="tabs-stack">
+        <button type="button" data-m="tokens" class="active">Token types</button>
+        <button type="button" data-m="cost">Cost</button>
+      </div>
+      <div id="chart-stack" class="chart"></div>
+    </div>
+    <div class="chart-box wide">
+      <h3>Model average price trend<span class="currency-note" data-currency-note></span></h3>
+      <div id="chart-price" class="chart"></div>
+    </div>
+  </div>
+
+  <section class="panel table-wrap">
+    <div class="table-title">
+      <h3>Details</h3>
+      <span class="currency-note" data-currency-note></span>
+    </div>
+    <div class="table-meta">
+      <span class="table-meta-left">
+        <span id="table-count">0 rows</span>
+        <label class="page-size-label" for="f-page-size">Rows per page
+          <select id="f-page-size">
+            <option value="30" selected>30</option>
+            <option value="50">50</option>
+            <option value="100">100</option>
+            <option value="all">All</option>
+          </select>
+        </label>
+      </span>
+      <div class="pagination">
+        <button id="btn-prev" type="button">&lt; Prev</button>
+        <span id="page-info">1 / 1</span>
+        <button id="btn-next" type="button">Next &gt;</button>
+      </div>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th data-k="bill_start">Time</th>
+            <th data-k="platform">Platform</th>
+            <th data-k="project">Project</th>
+            <th data-k="model">Model</th>
+            <th data-k="type">Type</th>
+            <th data-k="tokens" class="num">Tokens</th>
+            <th data-k="cost" class="num">Cost</th>
+            <th data-k="unit_price" class="num">Unit price</th>
+            <th data-k="source_file">Source file</th>
+          </tr>
+        </thead>
+        <tbody id="table-body"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+<script type="module" src="app.js"></script>
+</body>
+</html>

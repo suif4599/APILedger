@@ -16,6 +16,7 @@ struct Layout {
     std::string presets_dir;
     std::vector<std::string> preset_dirs;
     std::string template_path;
+    std::string report_js_path;
 };
 
 const Layout& layout();

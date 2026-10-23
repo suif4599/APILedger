@@ -73,7 +73,7 @@ void print_import_summary(const ImportStats& stats) {
     std::string summary = "Import complete: " + std::to_string(stats.files) +
                           " file(s) | " + std::to_string(stats.records) + " row(s) written";
     if (stats.replaced > 0) {
-        summary += " | " + std::to_string(stats.replaced) + " old bill(s) replaced";
+        summary += " | " + std::to_string(stats.replaced) + " overlapping bill(s) merged";
     }
     std::cout << summary << "\n";
 }

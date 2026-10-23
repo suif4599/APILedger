@@ -32,7 +32,9 @@ struct ReplaceResult {
     int records = 0;
     int deleted = 0;
     int written = 0;
+    int dropped = 0;
 };
 
 SourceBundle load_sources(const std::string& path);
+SourceBundle load_sources_bytes(const std::string& name, const std::string& bytes);
 ReplaceResult import_parsed_file(Database& db, const ParsedFile& file);

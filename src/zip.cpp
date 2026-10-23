@@ -6,11 +6,13 @@
 #include "util.h"
 
 std::vector<ZipEntry> read_zip_entries(const std::string& path) {
-    const std::string data = util::read_file(path);
+    return read_zip_entries_from_mem(util::read_file(path));
+}
 
+std::vector<ZipEntry> read_zip_entries_from_mem(const std::string& data) {
     mz_zip_archive archive{};
     if (!mz_zip_reader_init_mem(&archive, data.data(), data.size(), 0)) {
-        throw std::runtime_error("cannot open zip archive: " + path);
+        throw std::runtime_error("cannot open zip archive");
     }
 
     std::vector<ZipEntry> entries;

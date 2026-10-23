@@ -42,6 +42,7 @@ Layout build_layout() {
     layout.presets_dir = layout.share_dir + "/presets";
     layout.preset_dirs = {layout.presets_dir, layout.root + "/presets"};
     layout.template_path = layout.share_dir + "/report_template.html";
+    layout.report_js_path = layout.share_dir + "/report.js";
     return layout;
 }
 

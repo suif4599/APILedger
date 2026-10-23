@@ -10,10 +10,12 @@
     "type": ["type"],
     "tokens": ["tokens", "token", "amount"],
     "cost": ["cost", "amount"],
-    "unit_price": ["unit price", "price"]
+    "unit_price": ["unit price", "price"],
+    "currency": ["currency", "币种"]
   },
   "defaults": {
-    "platform": "YourPlatform"
+    "platform": "YourPlatform",
+    "currency": "CNY"
   },
   "type_map": {
     "input": "input",

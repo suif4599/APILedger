@@ -11,7 +11,8 @@
     "unit_price": ["price"]
   },
   "defaults": {
-    "platform": "DeepSeek"
+    "platform": "DeepSeek",
+    "currency": "CNY"
   },
   "type_map": {
     "input_cache_hit_tokens": "cache_input",

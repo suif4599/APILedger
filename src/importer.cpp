@@ -371,42 +371,105 @@ bool has_zip_magic(const std::string& bytes) {
 
 }  // namespace
 
-SourceBundle load_sources(const std::string& path) {
+namespace {
+
+std::string detect_currency(const std::vector<std::pair<std::string, std::string>>& entries) {
+    std::set<std::string> currencies;
+    for (const auto& [name, bytes] : entries) {
+        if (!util::ends_with_ci(name, ".csv")) continue;
+        try {
+            const Table table = parse_csv_bytes(bytes);
+            int column = -1;
+            for (size_t i = 0; i < table.headers.size(); ++i) {
+                if (util::lower_ascii(util::trim(table.headers[i])) == "currency") {
+                    column = static_cast<int>(i);
+                    break;
+                }
+            }
+            if (column < 0) continue;
+            for (const auto& row : table.rows) {
+                if (static_cast<size_t>(column) >= row.size()) continue;
+                const std::string value = util::trim(row[column]);
+                if (!value.empty()) currencies.insert(value);
+            }
+        } catch (const std::exception&) {
+            continue;
+        }
+    }
+    if (currencies.size() > 1) {
+        std::cout << "  [currency] multiple currencies in archive; using preset default\n";
+    }
+    return currencies.size() == 1 ? *currencies.begin() : std::string();
+}
+
+bool has_currency_column(const std::string& bytes) {
+    if (has_zip_magic(bytes)) return false;
+    try {
+        const Table table = parse_csv_bytes(bytes);
+        for (const std::string& header : table.headers) {
+            if (util::lower_ascii(util::trim(header)) == "currency") return true;
+        }
+    } catch (const std::exception&) {
+        return false;
+    }
+    return false;
+}
+
+}  // namespace
+
+SourceBundle load_sources_bytes(const std::string& name, const std::string& bytes) {
     SourceBundle bundle;
     const std::vector<Preset> presets = load_all_presets();
-    const std::optional<DateRange> fallback_range =
-        parse_file_date_range(util::basename(path));
+    const std::optional<DateRange> fallback_range = parse_file_date_range(name);
 
-    auto add_source = [&](const std::string& raw_name, const std::string& bytes) {
-        const std::string name = util::basename(raw_name);
+    std::vector<std::pair<std::string, std::string>> entries;
+    if (util::ends_with_ci(name, ".zip")) {
+        for (const ZipEntry& entry : read_zip_entries_from_mem(bytes)) {
+            if (util::ends_with_ci(entry.name, ".csv") ||
+                util::ends_with_ci(entry.name, ".xlsx")) {
+                entries.emplace_back(entry.name, entry.bytes);
+            }
+        }
+    } else {
+        entries.emplace_back(util::basename(name), bytes);
+    }
+
+    const std::string archive_currency = detect_currency(entries);
+    if (!archive_currency.empty()) {
+        std::cout << "  [currency] " << archive_currency << "\n";
+    }
+
+    auto add_source = [&](const std::string& raw_name, const std::string& source_bytes) {
+        const std::string source_name = util::basename(raw_name);
         try {
-            const Table table = has_zip_magic(bytes) ? parse_xlsx_bytes(bytes)
-                                                     : parse_csv_bytes(bytes);
-            const std::vector<ojson> records = parse_table_records(table, name, presets);
+            const Table table = has_zip_magic(source_bytes) ? parse_xlsx_bytes(source_bytes)
+                                                            : parse_csv_bytes(source_bytes);
+            std::vector<ojson> records = parse_table_records(table, source_name, presets);
             if (records.empty()) {
-                bundle.skipped.push_back({name, "no matching preset or no data"});
+                if (!has_currency_column(source_bytes)) {
+                    bundle.skipped.push_back({source_name, "no matching preset or no data"});
+                }
                 return;
             }
-            auto range = parse_file_date_range(name);
+            if (!archive_currency.empty()) {
+                for (ojson& record : records) record["currency"] = archive_currency;
+            }
+            auto range = parse_file_date_range(source_name);
             if (!range) range = fallback_range;
-            bundle.files.push_back({name, range, records});
+            bundle.files.push_back({source_name, range, std::move(records)});
         } catch (const std::exception& error) {
-            bundle.skipped.push_back({name, error.what()});
+            bundle.skipped.push_back({source_name, error.what()});
         }
     };
 
-    if (util::ends_with_ci(path, ".zip")) {
-        for (const ZipEntry& entry : read_zip_entries(path)) {
-            if (!util::ends_with_ci(entry.name, ".csv") &&
-                !util::ends_with_ci(entry.name, ".xlsx")) {
-                continue;
-            }
-            add_source(entry.name, entry.bytes);
-        }
-    } else {
-        add_source(util::basename(path), util::read_file(path));
+    for (const auto& [entry_name, entry_bytes] : entries) {
+        add_source(entry_name, entry_bytes);
     }
     return bundle;
+}
+
+SourceBundle load_sources(const std::string& path) {
+    return load_sources_bytes(util::basename(path), util::read_file(path));
 }
 
 ReplaceResult import_parsed_file(Database& db, const ParsedFile& file) {
@@ -438,7 +501,7 @@ ReplaceResult import_parsed_file(Database& db, const ParsedFile& file) {
     std::cout << "     range: platforms " << platforms_text << " | dates " << range_text << "\n";
 
     if (!result.replaced.empty()) {
-        std::cout << "     replacing " << result.replaced.size() << " old bill(s): ";
+        std::cout << "     merging " << result.replaced.size() << " overlapping bill(s): ";
         for (size_t i = 0; i < result.replaced.size(); ++i) {
             if (i) std::cout << ", ";
             std::cout << result.replaced[i];
@@ -448,7 +511,13 @@ ReplaceResult import_parsed_file(Database& db, const ParsedFile& file) {
         std::cout << "     no overlapping bills, accumulating\n";
     }
 
-    result.deleted = db.delete_sources(result.replaced);
-    result.written = db.upsert_batch(file.records);
+    const Database::MergeResult merged = db.merge_import(file.records, result.replaced);
+    result.deleted = merged.deleted_files;
+    result.written = merged.written;
+    result.dropped = merged.dropped;
+    if (merged.dropped > 0) {
+        std::cout << "     kept " << merged.dropped
+                  << " existing row(s) with equal or higher values\n";
+    }
     return result;
 }
