@@ -71,6 +71,14 @@ EMSCRIPTEN_KEEPALIVE const char* apiledger_import(const char* name,
 
         ojson files = ojson::array();
         for (const ParsedFile& file : bundle.files) {
+            std::string currency;
+            for (const ojson& record : file.records) {
+                const std::string value = json_text(record.value("currency", ojson("")));
+                if (!value.empty()) {
+                    currency = value;
+                    break;
+                }
+            }
             const ReplaceResult result = import_parsed_file(*g_db, file);
             ojson item = ojson::object();
             item["name"] = result.name;
@@ -78,6 +86,7 @@ EMSCRIPTEN_KEEPALIVE const char* apiledger_import(const char* name,
             item["written"] = result.written;
             item["dropped"] = result.dropped;
             item["replaced"] = result.replaced;
+            item["currency"] = currency;
             files.push_back(std::move(item));
         }
 

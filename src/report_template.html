@@ -59,6 +59,9 @@
   .chart { width: 100%; height: 320px; }
   /* Daily average price per model: lines plus a multi-row legend need a taller canvas. */
   #chart-price { height: 400px; }
+  .price-charts { grid-column: 1 / -1; display: grid; gap: 14px; }
+  .price-dynamic { display: grid; gap: 14px; }
+  .price-charts .chart { height: 400px; }
   .chart.empty { position: relative; }
   .chart-tabs { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
   .chart-tabs button { padding: 3px 14px; border: 1px solid var(--border); background: var(--card); color: inherit; border-radius: 6px; cursor: pointer; font-size: 12px; }
@@ -133,7 +136,7 @@
     <div class="filter-row" style="margin-top:10px;">
       <div class="filter-item"><label>Platform</label><select id="f-platform"><option value="">All</option></select></div>
       <div class="filter-item"><label>Project</label><select id="f-project"><option value="">All</option></select></div>
-      <div class="filter-item"><label>Model</label><select id="f-model"><option value="">All</option></select></div>
+      <div class="filter-item"><label>Usage</label><select id="f-model"><option value="">All</option></select></div>
       <div class="filter-item"><label>Type</label><select id="f-type"><option value="">All</option></select></div>
       <div class="filter-item"><label>Keyword</label><input type="text" id="f-keyword" placeholder="Search model/project/platform..."></div>
       <div class="filter-actions">
@@ -146,9 +149,9 @@
   <!-- Summary cards (follow the filters) -->
   <div class="cards">
     <div class="card"><div class="label">Total cost<span class="currency-note" data-currency-note></span></div><div class="value cost" id="c-cost">-</div></div>
-    <div class="card"><div class="label">Total tokens</div><div class="value tokens" id="c-tokens">-</div></div>
+    <div class="card"><div class="label">Total amount</div><div class="value tokens" id="c-tokens">-</div></div>
     <div class="card"><div class="label">Records</div><div class="value" id="c-records">-</div></div>
-    <div class="card"><div class="label">Models</div><div class="value" id="c-models">-</div></div>
+    <div class="card"><div class="label">Usage</div><div class="value" id="c-models">-</div></div>
     <div class="card"><div class="label">Platforms</div><div class="value" id="c-platforms">-</div></div>
   </div>
 
@@ -160,7 +163,7 @@
   <!-- Charts (computed in the browser from the current filters) -->
   <div class="chart-grid">
     <div class="chart-box wide">
-      <h3>Usage trend <span class="hint">(cost / tokens, dual axis)</span><span class="currency-note" data-currency-note></span></h3>
+      <h3>Usage trend <span class="hint">(cost / amount, dual axis)</span><span class="currency-note" data-currency-note></span></h3>
       <div class="chart-tabs" id="tabs-gran">
         <button data-g="day" class="active">Day</button>
         <button data-g="week">Week</button>
@@ -169,20 +172,23 @@
       <div id="chart-trend" class="chart"></div>
     </div>
     <div class="chart-box">
-      <h3>Model token / cost comparison<span class="currency-note" data-currency-note></span></h3>
+      <h3>Usage / cost comparison<span class="currency-note" data-currency-note></span></h3>
       <div id="chart-model" class="chart"></div>
     </div>
     <div class="chart-box">
-      <h3>Model token / cost composition<span class="currency-note" data-currency-note></span></h3>
+      <h3>Usage / cost composition<span class="currency-note" data-currency-note></span></h3>
       <div class="chart-tabs" id="tabs-stack">
-        <button data-m="tokens" class="active">Token types</button>
+        <button data-m="tokens" class="active">Usage types</button>
         <button data-m="cost">Cost</button>
       </div>
       <div id="chart-stack" class="chart"></div>
     </div>
-    <div class="chart-box wide">
-      <h3>Model average price trend<span class="currency-note" data-currency-note></span></h3>
-      <div id="chart-price" class="chart"></div>
+    <div id="price-charts" class="price-charts">
+      <div id="price-empty" class="chart-box wide" hidden>
+        <h3>Usage average price trend<span class="currency-note" data-currency-note></span></h3>
+        <div id="chart-price" class="chart"></div>
+      </div>
+      <div id="price-dynamic" class="price-dynamic"></div>
     </div>
   </div>
 
@@ -217,9 +223,9 @@
           <th data-k="bill_start">Time</th>
           <th data-k="platform">Platform</th>
           <th data-k="project">Project</th>
-          <th data-k="model">Model</th>
+          <th data-k="model">Usage</th>
           <th data-k="type">Type</th>
-          <th data-k="tokens" class="num">Tokens</th>
+          <th data-k="tokens" class="num">Amount</th>
           <th data-k="cost" class="num">Cost</th>
           <th data-k="unit_price" class="num">Unit price</th>
           <th data-k="source_file">Source file</th>

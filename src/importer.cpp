@@ -23,6 +23,7 @@ struct RowRules {
     ojson model_map = ojson::object();
     std::vector<std::string> skip_types;
     std::vector<std::pair<std::string, std::vector<std::string>>> skip_if;
+    std::vector<std::pair<std::string, std::vector<std::string>>> fallbacks;
 
     bool has_extract = false;
     std::string extract_column;
@@ -58,6 +59,12 @@ RowRules build_rules(const ojson& config) {
     if (parse.contains("skip_if") && parse["skip_if"].is_object()) {
         for (auto it = parse["skip_if"].begin(); it != parse["skip_if"].end(); ++it) {
             rules.skip_if.emplace_back(it.key(), as_string_list(it.value()));
+        }
+    }
+
+    if (parse.contains("fallback") && parse["fallback"].is_object()) {
+        for (auto it = parse["fallback"].begin(); it != parse["fallback"].end(); ++it) {
+            rules.fallbacks.emplace_back(it.key(), as_string_list(it.value()));
         }
     }
 
@@ -116,6 +123,17 @@ std::optional<ojson> apply_preset_row(const RowRules& rules,
                          (entry[it.key()].is_string() &&
                           entry[it.key()].get<std::string>().empty());
             if (empty) entry[it.key()] = it.value();
+        }
+    }
+
+    for (const auto& [field, columns] : rules.fallbacks) {
+        if (!field_string(entry, field).empty()) continue;
+        for (const std::string& column : columns) {
+            const std::string value = raw_value(raw, column);
+            if (!value.empty()) {
+                entry[field] = value;
+                break;
+            }
         }
     }
 
@@ -334,6 +352,16 @@ std::vector<ojson> parse_table_records(const Table& table, const std::string& fi
     }
 
     post_process(parsed);
+
+    // Non-token rows (tool calls etc.) are priced per call, not per 1M tokens.
+    for (ojson& record : parsed) {
+        const std::string type = field_string(record, "type");
+        if (!type.empty() && type != "cache_input" && type != "input" &&
+            type != "output") {
+            record["unit_price"] =
+                json_number(record.value("unit_price", ojson(0))) / 1000000.0;
+        }
+    }
 
     const size_t before = parsed.size();
     parsed = merge_by_key(parsed);

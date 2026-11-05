@@ -229,6 +229,21 @@
 
 .chart-box.wide { grid-column: 1 / -1; }
 
+.price-charts {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: var(--ak-space-3);
+}
+
+.price-dynamic {
+  display: grid;
+  gap: var(--ak-space-3);
+}
+
+.price-charts .chart {
+  height: 400px;
+}
+
 .chart-box h3 {
   margin: 0 0 var(--ak-space-2);
   font: 600 0.95rem/1.3 var(--ak-font-sans);

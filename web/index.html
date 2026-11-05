@@ -66,9 +66,9 @@
 
   <div class="cards">
     <div class="card"><div class="label">Total cost<span class="currency-note" data-currency-note></span></div><div class="value cost" id="c-cost">-</div></div>
-    <div class="card"><div class="label">Total tokens</div><div class="value tokens" id="c-tokens">-</div></div>
+    <div class="card"><div class="label">Total amount</div><div class="value tokens" id="c-tokens">-</div></div>
     <div class="card"><div class="label">Records</div><div class="value" id="c-records">-</div></div>
-    <div class="card"><div class="label">Models</div><div class="value" id="c-models">-</div></div>
+    <div class="card"><div class="label">Usage</div><div class="value" id="c-models">-</div></div>
     <div class="card"><div class="label">Platforms</div><div class="value" id="c-platforms">-</div></div>
   </div>
   <p class="date-hint mono" id="date-hint"></p>
@@ -97,7 +97,7 @@
         <select id="f-project"><option value="">All</option></select>
       </div>
       <div class="filter-item">
-        <label for="f-model">Model</label>
+        <label for="f-model">Usage</label>
         <select id="f-model"><option value="">All</option></select>
       </div>
       <div class="filter-item">
@@ -108,7 +108,7 @@
     <div class="filter-row">
       <div class="filter-item filter-grow">
         <label for="f-keyword">Keyword</label>
-        <input id="f-keyword" type="search" placeholder="Model, project, platform or type">
+        <input id="f-keyword" type="search" placeholder="Usage, project, platform or type">
       </div>
       <div class="filter-item">
         <label>Quick range</label>
@@ -130,7 +130,7 @@
 
   <div class="chart-grid">
     <div class="chart-box wide">
-      <h3>Usage trend <span class="hint">(cost / tokens, dual axis)</span><span class="currency-note" data-currency-note></span></h3>
+      <h3>Usage trend <span class="hint">(cost / amount, dual axis)</span><span class="currency-note" data-currency-note></span></h3>
       <div class="chart-tabs" id="tabs-gran">
         <button type="button" data-g="day" class="active">Day</button>
         <button type="button" data-g="week">Week</button>
@@ -139,20 +139,23 @@
       <div id="chart-trend" class="chart"></div>
     </div>
     <div class="chart-box align-with-tabs">
-      <h3>Model token / cost comparison<span class="currency-note" data-currency-note></span></h3>
+      <h3>Usage / cost comparison<span class="currency-note" data-currency-note></span></h3>
       <div id="chart-model" class="chart"></div>
     </div>
     <div class="chart-box">
-      <h3>Model token / cost composition<span class="currency-note" data-currency-note></span></h3>
+      <h3>Usage / cost composition<span class="currency-note" data-currency-note></span></h3>
       <div class="chart-tabs" id="tabs-stack">
-        <button type="button" data-m="tokens" class="active">Token types</button>
+        <button type="button" data-m="tokens" class="active">Usage types</button>
         <button type="button" data-m="cost">Cost</button>
       </div>
       <div id="chart-stack" class="chart"></div>
     </div>
-    <div class="chart-box wide">
-      <h3>Model average price trend<span class="currency-note" data-currency-note></span></h3>
-      <div id="chart-price" class="chart"></div>
+    <div id="price-charts" class="price-charts">
+      <div id="price-empty" class="chart-box wide" hidden>
+        <h3>Usage average price trend<span class="currency-note" data-currency-note></span></h3>
+        <div id="chart-price" class="chart"></div>
+      </div>
+      <div id="price-dynamic" class="price-dynamic"></div>
     </div>
   </div>
 
@@ -186,9 +189,9 @@
             <th data-k="bill_start">Time</th>
             <th data-k="platform">Platform</th>
             <th data-k="project">Project</th>
-            <th data-k="model">Model</th>
+            <th data-k="model">Usage</th>
             <th data-k="type">Type</th>
-            <th data-k="tokens" class="num">Tokens</th>
+            <th data-k="tokens" class="num">Amount</th>
             <th data-k="cost" class="num">Cost</th>
             <th data-k="unit_price" class="num">Unit price</th>
             <th data-k="source_file">Source file</th>

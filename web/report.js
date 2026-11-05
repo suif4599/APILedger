@@ -118,8 +118,39 @@
   function currencyPrefix() { return selectedCurrency ? selectedCurrency + ' ' : ''; }
   function fmtCost(v) { return currencyPrefix() + money(v, 4); }
   function fmtCost2(v) { return currencyPrefix() + money(v, 2); }
-  function fmtTokensM(v) { return (Number(v) / 1e6).toLocaleString('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 3 }) + ' M'; }
-  function fmtMetric(v, metric) { return metric === 'cost' ? fmtCost(v) : fmtTokensM(v); }
+  function priceUnit(value) {
+    if (value >= 0.01) return { key: 'M', factor: 1, suffix: '/M' };
+    if (value * 1000 >= 0.01) return { key: 'K', factor: 1000, suffix: '/K' };
+    return { key: '1', factor: 1, suffix: '' };
+  }
+  function priceDigits(key) { return key === 'M' ? 4 : key === 'K' ? 3 : 6; }
+  function formatPrice(value, withCurrency = true) {
+    const unit = priceUnit(value);
+    const digits = priceDigits(unit.key);
+    const prefix = withCurrency ? currencyPrefix() : '';
+    return prefix + Number(value * unit.factor).toLocaleString('en-US', {
+      minimumFractionDigits: digits, maximumFractionDigits: digits,
+    }) + unit.suffix;
+  }
+  function amountUnit(v) {
+    const abs = Math.abs(Number(v) || 0);
+    if (abs >= 1e9) return 'B';
+    if (abs >= 1e6) return 'M';
+    if (abs >= 1e3) return 'K';
+    return '1';
+  }
+  function formatAmount(v) {
+    const n = Number(v) || 0;
+    const unit = amountUnit(n);
+    if (unit === '1') {
+      return n.toLocaleString('en-US', { maximumFractionDigits: 0 });
+    }
+    const factor = unit === 'B' ? 1e9 : unit === 'M' ? 1e6 : 1e3;
+    return (n / factor).toLocaleString('en-US', {
+      minimumFractionDigits: 3, maximumFractionDigits: 3,
+    }) + ' ' + unit;
+  }
+  function fmtMetric(v, metric) { return metric === 'cost' ? fmtCost(v) : formatAmount(v); }
 
   // Nice axis: interval is 1/2/5 x 10^n and at least v/steps; max is a multiple of interval.
   function niceAxis(v, steps = 9) {
@@ -134,16 +165,15 @@
     return { max: Number(max.toFixed(10)), interval };
   }
 
-  // Detail table unit price: 2 decimals.
   function priceCell(row) {
     if (!row.unit_price) return '-';
-    return money(row.unit_price, 2) + '/M';
+    return formatPrice(row.unit_price, false);
   }
 
   // Unit price sequence: constant -> "CNY 2"; price change -> "CNY 2 -> CNY 5".
   function fmtRateSeq(seq) {
     if (!seq || !seq.length) return '';
-    const f = v => currencyPrefix() + Number(v).toLocaleString('en-US', { maximumFractionDigits: 4 });
+    const f = v => formatPrice(v);
     if (seq.length === 1) return f(seq[0]);
     if (seq.length <= 3) return seq.map(f).join(' -> ');
     return f(seq[0]) + ' -> ... -> ' + f(seq[seq.length - 1]);
@@ -283,13 +313,13 @@
     const dates = filtered.map(r => String(r.bill_start).slice(0, 10)).filter(Boolean).sort();
 
     document.getElementById('c-cost').textContent = money(totalCost, 2);
-    document.getElementById('c-tokens').textContent = fmtTokensM(totalTokens);
+    document.getElementById('c-tokens').textContent = formatAmount(totalTokens);
     document.getElementById('c-records').textContent = fmtNum(filtered.length);
     document.getElementById('c-models').textContent = fmtNum(models.size);
     document.getElementById('c-platforms').textContent = fmtNum(platforms.size);
     document.getElementById('date-hint').textContent =
       (dates.length ? dates[0] + ' ~ ' + dates[dates.length - 1] : 'No data') +
-      ` | ${platforms.size} platforms | ${models.size} models` +
+      ` | ${platforms.size} platforms | ${models.size} usages` +
       (filtered.length !== ROWS.length ? ` (filtered ${filtered.length} / ${ROWS.length} rows)` : '');
   }
 
@@ -317,7 +347,7 @@
         formatter: params => {
           let s = params[0].axisValue;
           for (const p of params) {
-            const v = p.seriesName === 'Cost' ? fmtCost(p.value) : fmtTokensM(p.value);
+            const v = p.seriesName === 'Cost' ? fmtCost(p.value) : formatAmount(p.value);
             s += '<br>' + p.marker + ' ' + p.seriesName + ': ' + v;
           }
           return s;
@@ -328,7 +358,7 @@
       xAxis: { type: 'category', data: keys, axisLabel: { rotate: 45, fontSize: 10 } },
       yAxis: [
         { type: 'value', name: 'Cost', axisLabel: { fontSize: 10 } },
-        { type: 'value', name: 'Tokens (M)', splitLine: { show: false },
+        { type: 'value', name: 'Amount (M)', splitLine: { show: false },
           axisLabel: { fontSize: 10, formatter: v => (v / 1e6).toLocaleString('en-US', { maximumFractionDigits: 3 }) } },
       ],
       series: [
@@ -340,15 +370,16 @@
             label: { formatter: 'Average', color: P.label, textBorderWidth: 0 } } : undefined,
         },
         {
-          name: 'Tokens', type: 'line', yAxisIndex: 1, data: tokenVals, smooth: true,
+          name: 'Amount', type: 'line', yAxisIndex: 1, data: tokenVals, smooth: true,
           itemStyle: { color: P.tokens }, areaStyle: { opacity: 0.08 },
         },
       ],
     }, true);
   }
 
-  // Model token / cost comparison: two horizontal bars per model,
-  // axis in percent of total, absolute values on the right.
+  // Usage / cost comparison: two horizontal bars per usage, each normalized to
+  // its own 100%. Amount is normalized within its display unit (K/M/B/raw),
+  // cost within the selected currency's total; the units are not comparable.
   function renderModelBar() {
     const el = document.getElementById('chart-model');
     if (!filtered.length) { showEmpty(el, 'No data for the current filters'); return; }
@@ -365,9 +396,17 @@
     const groups = [...map.entries()]
       .map(([name, v]) => ({ name, ...v }))
       .sort((a, b) => b.tokens - a.tokens);
-    const totalTokens = groups.reduce((s, g) => s + g.tokens, 0);
     const totalCost = groups.reduce((s, g) => s + g.cost, 0);
-    // Category index 0 is at the bottom; reverse so the largest model is on top.
+    const amountTotals = new Map();
+    for (const g of groups) {
+      const unit = amountUnit(g.tokens);
+      amountTotals.set(unit, (amountTotals.get(unit) || 0) + g.tokens);
+    }
+    const amountPct = g => {
+      const total = amountTotals.get(amountUnit(g.tokens)) || 0;
+      return total ? g.tokens / total * 100 : 0;
+    };
+    // Category index 0 is at the bottom; reverse so the largest usage is on top.
     const rows = [...groups].reverse();
     chart.setOption({
       legend: { bottom: 0 },
@@ -376,10 +415,13 @@
         formatter: p => {
           const g = rows[p.dataIndex];
           if (!g) return '';
-          const tp = totalTokens ? (g.tokens / totalTokens * 100).toFixed(2) : '0.00';
+          const unit = amountUnit(g.tokens);
+          const unitTotal = amountTotals.get(unit) || 0;
+          const tp = unitTotal ? (g.tokens / unitTotal * 100).toFixed(2) : '0.00';
           const cp = totalCost ? (g.cost / totalCost * 100).toFixed(2) : '0.00';
+          const unitLabel = unit === '1' ? 'per 1' : unit;
           return '<b>' + g.name + '</b><br>'
-               + 'Tokens: ' + fmtTokensM(g.tokens) + ' (' + tp + '%)<br>'
+               + 'Amount: ' + formatAmount(g.tokens) + ' (' + tp + '% of ' + unitLabel + ' total)<br>'
                + 'Cost: ' + fmtCost2(g.cost) + ' (' + cp + '%)';
         },
       },
@@ -387,8 +429,7 @@
       // Axis max is a nice tick near the longest bar, not always 0-100%.
       xAxis: (() => {
         const maxPct = rows.reduce((m, g) =>
-          Math.max(m, totalTokens ? g.tokens / totalTokens * 100 : 0,
-                       totalCost ? g.cost / totalCost * 100 : 0), 0);
+          Math.max(m, amountPct(g), totalCost ? g.cost / totalCost * 100 : 0), 0);
         const a = niceAxis(maxPct);
         return { type: 'value', max: a.max, interval: a.interval,
                  axisLabel: { formatter: '{value}%', fontSize: 10 } };
@@ -396,12 +437,12 @@
       yAxis: { type: 'category', data: rows.map(g => g.name), axisLabel: { fontSize: 10 } },
       series: [
         {
-          name: 'Tokens', type: 'bar',
-          data: rows.map(g => totalTokens ? g.tokens / totalTokens * 100 : 0),
+          name: 'Amount', type: 'bar',
+          data: rows.map(amountPct),
           itemStyle: { color: P.tokens, borderRadius: [0, 4, 4, 0] },
           barMaxWidth: 12,
           label: { show: true, position: 'right', color: P.label,
-                   formatter: p => fmtTokensM(rows[p.dataIndex].tokens), fontSize: 10 },
+                   formatter: p => formatAmount(rows[p.dataIndex].tokens), fontSize: 10 },
         },
         {
           name: 'Cost', type: 'bar',
@@ -426,11 +467,11 @@
 
     const bucketMap = metric === 'cost' ? 'cost' : 'tokens';
     const totalOf = g => metric === 'cost' ? g.costTotal : g.tokenTotal;
-    // Weighted average price (CNY per 1M tokens): sum(unit_price * tokens) / sum(tokens).
+    // Weighted average unit price; token types are per 1M tokens, others per call.
     const avgRateText = g => {
       if (!g.tokenTotal) return '';
       const rate = g.priceCost / g.tokenTotal;
-      return currencyPrefix() + rate.toLocaleString('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 3 }) + '/M';
+      return formatPrice(rate);
     };
     // Show the average label once, next to the topmost non-zero segment.
     const labelFor = (bucketIdx) => ({
@@ -486,16 +527,25 @@
     }, true);
   }
 
-  // Daily average price per model: one line per model, expanding renderStack's average by day.
-  // y = daily sum(unit_price * tokens) / sum(tokens) (CNY per 1M tokens), the same
-  // basis as the composition chart, split by day. Rows without a price count in
-  // neither numerator nor denominator. A model used on several platforms becomes
-  // one line per platform; days without data are gaps (lines break there).
+  // Daily average price per usage. Each display unit (/M, /K, per 1) gets its own
+  // chart so values with different bases are never plotted on a shared axis.
   function renderAvgPrice() {
-    const el = document.getElementById('chart-price');
-    if (!filtered.length) { showEmpty(el, 'No data for the current filters'); return; }
+    const container = document.getElementById('price-charts');
+    const dynamic = document.getElementById('price-dynamic');
+    const emptyBox = document.getElementById('price-empty');
+    if (!container || !dynamic) return;
+    Object.keys(charts).filter(id => id.startsWith('price')).forEach(disposeChart);
+    dynamic.textContent = '';
 
-    // Only prefix the platform when a model appears on more than one platform.
+    const emptyState = message => {
+      if (emptyBox) emptyBox.hidden = false;
+      const el = document.getElementById('chart-price');
+      if (el) showEmpty(el, message);
+      updateCurrencyNotes();
+    };
+
+    if (!filtered.length) { emptyState('No data for the current filters'); return; }
+
     const platforms = new Map();
     for (const r of filtered) {
       const m = r.model || '(empty)';
@@ -507,81 +557,107 @@
       return (platforms.get(m).size > 1 && r.platform) ? r.platform + ' / ' + m : m;
     };
 
-    const dates = new Set();
-    const seriesMap = new Map();   // label -> Map(date -> {num, den, buckets})
+    const groups = new Map();
     for (const r of filtered) {
       const tokens = Number(r.tokens || 0);
       const d = String(r.bill_start).slice(0, 10);
       const price = Number(r.unit_price || 0);
       if (!d || !(tokens > 0) || !(price > 0)) continue;
+      const unit = priceUnit(price);
+      let group = groups.get(unit.key);
+      if (!group) {
+        group = { unit, dates: new Set(), seriesMap: new Map() };
+        groups.set(unit.key, group);
+      }
       const label = labelOf(r);
-      let byDate = seriesMap.get(label);
-      if (!byDate) { byDate = new Map(); seriesMap.set(label, byDate); }
-      // Buckets follow TYPE_BUCKETS order; the tooltip shows their shares.
+      let byDate = group.seriesMap.get(label);
+      if (!byDate) { byDate = new Map(); group.seriesMap.set(label, byDate); }
       const g = byDate.get(d) || { num: 0, den: 0, buckets: [] };
-      g.num += price * tokens;
+      g.num += price * unit.factor * tokens;
       g.den += tokens;
       const bi = TYPE_BUCKETS.findIndex(b => b.match(r.type || ''));
       g.buckets[bi] = (g.buckets[bi] || 0) + tokens;
       byDate.set(d, g);
-      dates.add(d);
+      group.dates.add(d);
     }
-    if (!dates.size) { showEmpty(el, 'No rows with a price for the current filters'); return; }
+    if (!groups.size) { emptyState('No rows with a price for the current filters'); return; }
+    if (emptyBox) emptyBox.hidden = true;
 
-    const chart = getChart('price', el);
-    if (!chart) return;
-    const dateList = [...dates].sort();
-    // Lines ordered by token total descending, consistent with the legend and charts.
-    const lines = [...seriesMap.entries()]
-      .map(([name, byDate]) => ({ name, byDate,
-        tokens: [...byDate.values()].reduce((s, g) => s + g.den, 0) }))
-      .sort((a, b) => b.tokens - a.tokens);
-    const fmtPrice3 = v => currencyPrefix() + Number(v).toLocaleString('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 3 }) + '/M';
-    // Tooltip extra line: this model's token type shares for the day (2 decimals).
-    const shareLine = g => {
-      if (!g || !g.den) return '';
-      const parts = TYPE_BUCKETS
-        .map((b, i) => ({ label: b.label, n: g.buckets[i] || 0 }))
-        .filter(x => x.n > 0)
-        .map(x => x.label + ' ' + (x.n / g.den * 100).toFixed(2) + '%');
-      return parts.length ? '<br><span class="tip-muted"> ' + parts.join(' | ') + '</span>' : '';
-    };
-    // The legend wraps to multiple rows; reserve bottom space so it does not cover date labels.
-    const legendRows = Math.ceil(lines.length /
-      Math.max(1, Math.floor((el.clientWidth || 900) / 170)));
+    for (const key of ['M', 'K', '1']) {
+      const group = groups.get(key);
+      if (!group) continue;
+      const { unit } = group;
+      const box = document.createElement('div');
+      box.className = 'chart-box wide';
+      const title = document.createElement('h3');
+      title.textContent = 'Usage average price trend';
+      const note = document.createElement('span');
+      note.className = 'currency-note';
+      note.dataset.currencyNote = '';
+      note.dataset.currencyUnit = key === '1' ? '' : key;
+      title.appendChild(note);
+      const el = document.createElement('div');
+      el.id = `chart-price-${key}`;
+      el.className = 'chart';
+      box.append(title, el);
+      dynamic.appendChild(box);
 
-    chart.setOption({
-      tooltip: {
-        trigger: 'axis',
-        formatter: params => {
-          const date = params[0].axisValue;
-          let s = date;
-          for (const p of params) {           // skip lines with no data on this day
-            if (p.value == null) continue;
-            s += '<br>' + p.marker + ' ' + p.seriesName + ': ' + fmtPrice3(p.value);
-            const byDate = seriesMap.get(p.seriesName);
-            s += shareLine(byDate ? byDate.get(date) : null);
-          }
-          return s;
+      const chart = getChart(`price-${key}`, el);
+      if (!chart) continue;
+      const dateList = [...group.dates].sort();
+      const lines = [...group.seriesMap.entries()]
+        .map(([name, byDate]) => ({ name, byDate,
+          tokens: [...byDate.values()].reduce((s, g) => s + g.den, 0) }))
+        .sort((a, b) => b.tokens - a.tokens);
+      const digits = priceDigits(key);
+      const fmtValue = v => currencyPrefix() + Number(v).toLocaleString('en-US', {
+        minimumFractionDigits: digits, maximumFractionDigits: digits,
+      }) + unit.suffix;
+      const shareLine = g => {
+        if (!g || !g.den) return '';
+        const parts = TYPE_BUCKETS
+          .map((b, i) => ({ label: b.label, n: g.buckets[i] || 0 }))
+          .filter(x => x.n > 0)
+          .map(x => x.label + ' ' + (x.n / g.den * 100).toFixed(2) + '%');
+        return parts.length ? '<br><span class="tip-muted"> ' + parts.join(' | ') + '</span>' : '';
+      };
+      const legendRows = Math.ceil(lines.length /
+        Math.max(1, Math.floor((el.clientWidth || 900) / 170)));
+
+      chart.setOption({
+        tooltip: {
+          trigger: 'axis',
+          formatter: params => {
+            const date = params[0].axisValue;
+            let s = date;
+            for (const p of params) {
+              if (p.value == null) continue;
+              s += '<br>' + p.marker + ' ' + p.seriesName + ': ' + fmtValue(p.value);
+              const byDate = group.seriesMap.get(p.seriesName);
+              s += shareLine(byDate ? byDate.get(date) : null);
+            }
+            return s;
+          },
         },
-      },
-      // Legend text color comes from the theme; only the font size is set here.
-      legend: { bottom: 0, type: 'plain', itemGap: 10, textStyle: { fontSize: 11 } },
-      grid: { left: 70, right: 30, top: 46, bottom: 72 + legendRows * 22 },
-      xAxis: { type: 'category', data: dateList, axisLabel: { rotate: 45, fontSize: 10 } },
-      yAxis: { type: 'value', name: 'Avg price /M',
-               axisLabel: { fontSize: 10,
-                 formatter: v => Number(v).toLocaleString('en-US', { maximumFractionDigits: 3 }) } },
-      series: lines.map((l, i) => ({
-        name: l.name, type: 'line', smooth: true, connectNulls: false,
-        symbolSize: 5,
-        itemStyle: { color: P.series[i % P.series.length] },
-        data: dateList.map(d => {
-          const g = l.byDate.get(d);
-          return g && g.den ? +(g.num / g.den).toFixed(3) : null;
-        }),
-      })),
-    }, true);
+        legend: { bottom: 0, type: 'plain', itemGap: 10, textStyle: { fontSize: 11 } },
+        grid: { left: 70, right: 30, top: 46, bottom: 72 + legendRows * 22 },
+        xAxis: { type: 'category', data: dateList, axisLabel: { rotate: 45, fontSize: 10 } },
+        yAxis: { type: 'value',
+                 name: unit.suffix ? `Avg price ${unit.suffix}` : 'Avg price',
+                 axisLabel: { fontSize: 10,
+                   formatter: v => Number(v).toLocaleString('en-US', { maximumFractionDigits: 3 }) } },
+        series: lines.map((l, i) => ({
+          name: l.name, type: 'line', smooth: true, connectNulls: false,
+          symbolSize: 5,
+          itemStyle: { color: P.series[i % P.series.length] },
+          data: dateList.map(d => {
+            const g = l.byDate.get(d);
+            return g && g.den ? +(g.num / g.den).toFixed(3) : null;
+          }),
+        })),
+      }, true);
+    }
+    updateCurrencyNotes();
   }
 
   function renderCharts() {
@@ -860,8 +936,34 @@
 
   function updateCurrencyNotes() {
     document.querySelectorAll('[data-currency-note]').forEach(el => {
-      el.textContent = selectedCurrency ? `(${selectedCurrency})` : '';
+      const unit = el.dataset.currencyUnit || '';
+      el.textContent = selectedCurrency
+        ? `(${selectedCurrency}${unit ? '/' + unit : ''})`
+        : '';
     });
+  }
+
+  function storedCurrency() {
+    try { return localStorage.getItem('apiledger-currency') || ''; } catch (e) { return ''; }
+  }
+
+  function defaultCurrency(list) {
+    const stored = storedCurrency();
+    if (list.includes(stored)) return stored;
+    return list.length === 1 ? list[0] : (list.includes('USD') ? 'USD' : list[0]);
+  }
+
+  function selectCurrency(code) {
+    if (!code || !currencyList().includes(code)) return;
+    selectedCurrency = code;
+    currencyManual = true;
+    try { localStorage.setItem('apiledger-currency', code); } catch (e) {}
+    const tabs = document.getElementById('currency-tabs');
+    if (tabs) {
+      tabs.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.textContent === code));
+    }
+    updateCurrencyNotes();
+    applyFilters();
   }
 
   function rebuildCurrency() {
@@ -878,7 +980,7 @@
       return;
     }
     if (!currencyManual || !list.includes(selectedCurrency)) {
-      selectedCurrency = list.length === 1 ? list[0] : (list.includes('USD') ? 'USD' : list[0]);
+      selectedCurrency = defaultCurrency(list);
     }
     tabs.textContent = '';
     for (const code of list) {
@@ -886,13 +988,7 @@
       button.type = 'button';
       button.textContent = code;
       if (code === selectedCurrency) button.className = 'active';
-      button.addEventListener('click', () => {
-        selectedCurrency = code;
-        currencyManual = true;
-        tabs.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.textContent === code));
-        updateCurrencyNotes();
-        applyFilters();
-      });
+      button.addEventListener('click', () => selectCurrency(code));
       tabs.appendChild(button);
     }
     updateCurrencyNotes();
@@ -920,6 +1016,7 @@
   window.APILedgerReport = {
     mount,
     update,
+    setCurrency: selectCurrency,
     _test: {
       rows: () => ROWS,
       setFiltered: value => { filtered = value; },

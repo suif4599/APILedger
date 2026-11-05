@@ -106,21 +106,21 @@ The same import and ledger core compiles to WebAssembly for the tools-site hub a
 nix build .#web --out-link result-web
 ```
 
-`result-web/` contains the page, `apiledger.js`/`apiledger.wasm`, the shared report script, ECharts, and styles. Bills are parsed in the browser; the ledger is stored in IndexedDB and can optionally sync to the hub's D1 database when signed in. Import is a single button (no file-name field); a date range can be deleted locally and, when cloud sync is on, from the cloud as well. Guests are never prompted to sign in.
+`result-web/` contains the page, `apiledger.js`/`apiledger.wasm`, the shared report script, ECharts, and styles. Bills are parsed in the browser. Without cloud sync the ledger lives only in IndexedDB; with cloud sync enabled it lives only in the cloud — no browser copy is kept, so a failed sync surfaces the server error and the unsynced changes are lost on reload. Import is a single button (no file-name field); a date range can be deleted locally and, when cloud sync is on, from the cloud as well. Guests are never prompted to sign in.
 
 ## HTML report
 
 The report is a **single self-contained HTML file**: all rows are embedded as JSON, ECharts is inlined (downloaded once into `$APILEDGER_ROOT/.cache/echarts.min.js`, with a CDN fallback), no server required, works offline.
 
-- **Filter bar** (date range / platform / project / model / type / keyword) — filters the summary cards, all charts, and the detail table together
-- **Currency switch** — one global currency at a time (like the token-types / cost switch). It defaults to the only currency present, otherwise to USD. Money-related card/chart/table titles carry a small currency code; the detail table has no per-row currency markers
-- **Summary cards**: total cost / total tokens / record count / model count / platform count (follow the filters)
+- **Filter bar** (date range / platform / project / usage / type / keyword) — filters the summary cards, all charts, and the detail table together
+- **Currency switch** — one global currency at a time (like the usage-types / cost switch). It defaults to the only currency present, otherwise to USD. Money-related card/chart/table titles carry a small currency code; price trend titles combine currency and unit (`CNY/M`, `CNY/K`, `CNY`), and the detail table has no per-row currency markers
+- **Summary cards**: total cost / total amount / record count / usage count / platform count (follow the filters)
 - **Charts** (all recomputed in the browser from the filtered rows):
-  - Usage trend: cost + tokens on two axes, daily/weekly/monthly granularity, averages
-  - Model token / cost comparison: two horizontal bars per model, axis in percent of total, absolute values on the right
-  - Model token / cost composition: platform × model 100% stacked bars (cache input / input / output) with the price per 1M tokens on the right; hover shows type shares and unit prices, with price changes shown as `2 -> 5` in the selected currency
-  - Model average price over time: one line per model, daily weighted average `Σ(unit price × tokens) / Σtokens` per 1M tokens, same basis as the composition chart; hover shows type shares; a model used on several platforms is split per platform
-- **Detail table**: sorted by platform → project → date by default, clickable column sorting and pagination; columns are date / platform / project / model / type / tokens / cost / unit price / source file
+  - Usage trend: cost + amount on two axes, daily/weekly/monthly granularity, averages
+  - Usage / cost comparison: two horizontal bars per usage. Amount is normalized to 100% within its display unit (K/M/B/raw), cost within the selected currency total; the two units are not compared with each other. Absolute values are shown on the right
+  - Usage / cost composition: platform × usage 100% stacked bars (cache input / input / output) with the price per 1M tokens on the right; hover shows type shares and unit prices, with price changes shown as `2 -> 5` in the selected currency
+  - Usage average price over time: one chart per display unit (`/M`, `/K`, per 1), one line per usage, daily weighted average `Σ(unit price × amount) / Σamount`; hover shows type shares; a usage used on several platforms is split per platform
+- **Detail table**: sorted by platform → project → date by default, clickable column sorting and pagination; columns are date / platform / project / usage / type / amount / cost / unit price / source file. Unit prices use adaptive units: `/M` when the value is readable, otherwise `/K`, otherwise the plain number (per call/unit), with fixed decimals per unit (`/M` 4, `/K` 3, per 1 6) so columns stay aligned
 - **Light / dark theme**: follows the system by default (`prefers-color-scheme`), toggled in the top-right corner and remembered in `localStorage`. Chart text lives in canvas pixels, so the report ships its own dark palette (CSS variables plus an ECharts theme)
 
 ## Input format
@@ -154,7 +154,10 @@ The program matches a bill by filename keyword first, then by header keywords; a
 | :--- | :--- |
 | `skip_if` | `{ "field": ["value", ...] }` — skip the row when the mapped field (or a raw column with that name) equals one of the values |
 | `extract` | `{ "column", "pattern", "group_type", "group_tokens" }` — parse type and tokens out of a single cell with a regular expression; no match skips the row |
+| `fallback` | `{ "field": ["column", ...] }` — fill an empty field from a raw column (e.g. `model` from `name` for non-token rows such as tool calls) |
 | `date_format` | `{ "field", "from": "yyyyMMdd" }` — convert a compact date to `YYYY-MM-DD` |
+
+Rows whose billing type is not `cache_input` / `input` / `output` (for example `function_call`) keep their cost but store `unit_price = 0`, because their price is not per 1M tokens; they are excluded from the average-price chart.
 
 ### Standard fields
 
@@ -167,7 +170,7 @@ The program matches a bill by filename keyword first, then by header keywords; a
 | `type` | TEXT | Billing type | `cache_input` / `input` / `output` |
 | `tokens` | INTEGER | Token count | Non-negative integer |
 | `cost` | REAL | Amount | Non-negative float |
-| `unit_price` | REAL | Unit price | Non-negative float per 1M tokens |
+| `unit_price` | REAL | Unit price | Non-negative float; per 1M tokens for token types, per call for other types |
 | `currency` | TEXT | Currency code | `CNY` / `USD` / other code; empty when unknown |
 
 Timestamps are truncated to the day (bills are daily buckets); daily bills only need a date column.
@@ -204,7 +207,7 @@ $APILEDGER_ROOT/
 | `type` | TEXT | Billing type |
 | `tokens` | INTEGER | Tokens |
 | `cost` | REAL | Amount |
-| `unit_price` | REAL | Unit price (per 1M tokens) |
+| `unit_price` | REAL | Unit price (per 1M tokens for token types, per call otherwise) |
 | `source_file` | TEXT | Source bills, comma separated |
 | `currency` | TEXT | Currency code (`CNY`, `USD`, …; empty when unknown) |
 

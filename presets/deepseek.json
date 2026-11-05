@@ -33,6 +33,9 @@
     "skip_if": {
       "type": ["request_count"]
     },
+    "fallback": {
+      "model": ["name"]
+    },
     "date_format": {
       "field": "bill_start",
       "from": "yyyyMMdd"

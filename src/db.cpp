@@ -294,8 +294,11 @@ INSERT INTO api_records
     (date, platform, project, model, type, tokens, cost, unit_price, source_file, currency)
 SELECT date, platform, project, model, type,
        SUM(tokens), SUM(cost),
-       CASE WHEN SUM(tokens) > 0
+       CASE WHEN type IN ('cache_input', 'input', 'output')
+                  AND SUM(tokens) > 0 AND MAX(unit_price) > 0
             THEN ROUND(SUM(cost) * 1000000.0 / SUM(tokens), 4)
+            WHEN SUM(tokens) > 0
+            THEN SUM(cost) / SUM(tokens)
             ELSE MAX(unit_price) END,
        GROUP_CONCAT(DISTINCT source_file), MAX(currency)
 FROM record_sources
@@ -538,9 +541,15 @@ void Database::refresh_aggregate(const std::vector<std::string>& key) {
     const double max_price = sqlite3_column_double(query.handle, 3);
     const std::string files = column_text(query.handle, 4);
     const std::string currency = column_text(query.handle, 5);
+    const bool token_type =
+        key.size() > 4 && (key[4] == "cache_input" || key[4] == "input" ||
+                           key[4] == "output");
     const double unit_price =
-        tokens > 0 ? std::round(cost * 1e6 / static_cast<double>(tokens) * 1e4) / 1e4
-                   : max_price;
+        token_type
+            ? (tokens > 0 && max_price > 0
+                   ? std::round(cost * 1e6 / static_cast<double>(tokens) * 1e4) / 1e4
+                   : max_price)
+            : (tokens > 0 ? cost / static_cast<double>(tokens) : max_price);
 
     Statement upsert(db_, UPSERT_AGGREGATE_SQL);
     bind_key(upsert.handle, key);
@@ -562,6 +571,7 @@ Database::MergeResult Database::merge_import(const std::vector<ojson>& records,
         long long tokens = 0;
         double cost = 0.0;
         std::string currency;
+        double unit_price = 0.0;
     };
     std::map<std::vector<std::string>, Total> totals;
     if (!old_files.empty()) {
@@ -572,7 +582,7 @@ Database::MergeResult Database::merge_import(const std::vector<ojson>& records,
         }
         Statement query(db_,
                         ("SELECT date, platform, project, model, type, SUM(tokens), SUM(cost),"
-                         " MAX(currency) FROM record_sources WHERE source_file IN (" +
+                         " MAX(currency), MAX(unit_price) FROM record_sources WHERE source_file IN (" +
                          placeholders + ") GROUP BY date, platform, project, model, type").c_str());
         for (size_t i = 0; i < old_files.size(); ++i) {
             bind_text(query.handle, static_cast<int>(i) + 1, old_files[i]);
@@ -584,7 +594,32 @@ Database::MergeResult Database::merge_import(const std::vector<ojson>& records,
                 column_text(query.handle, 4)};
             totals[std::move(key)] = {sqlite3_column_int64(query.handle, 5),
                                       sqlite3_column_double(query.handle, 6),
-                                      column_text(query.handle, 7)};
+                                      column_text(query.handle, 7),
+                                      sqlite3_column_double(query.handle, 8)};
+        }
+    }
+
+    std::vector<std::vector<std::string>> cleanup_keys;
+    if (!old_files.empty()) {
+        for (const ojson& record : records) {
+            const std::string model = json_text(record.value("model", ojson("")));
+            const std::string type = json_text(record.value("type", ojson("")));
+            if (model.empty() || type.empty() || type == "cache_input" ||
+                type == "input" || type == "output") {
+                continue;
+            }
+            const std::vector<std::string> key = record_key(record);
+            std::vector<std::string> empty_key = {key[0], key[1], key[2], "", key[4]};
+            const auto found = totals.find(empty_key);
+            if (found == totals.end()) continue;
+            const long long tokens = json_int(record.value("tokens", ojson(0)));
+            const double cost = json_number(record.value("cost", ojson(0)));
+            const std::string currency = json_text(record.value("currency", ojson("")));
+            if (found->second.tokens == tokens &&
+                std::abs(found->second.cost - cost) <= 1e-9 &&
+                found->second.currency == currency) {
+                cleanup_keys.push_back(std::move(empty_key));
+            }
         }
     }
 
@@ -607,17 +642,21 @@ Database::MergeResult Database::merge_import(const std::vector<ojson>& records,
         const std::string currency = json_text(record.value("currency", ojson("")));
         const bool fill_currency =
             same_values && !currency.empty() && found->second.currency.empty();
+        const double unit_price = json_number(record.value("unit_price", ojson(0)));
+        const bool update_price =
+            same_values && unit_price > 0 &&
+            std::abs(unit_price - found->second.unit_price) > 1e-9;
         const bool higher =
             cost > old_cost + 1e-9 ||
             (std::abs(cost - old_cost) <= 1e-9 && tokens > old_tokens);
-        if (higher || fill_currency) {
+        if (higher || fill_currency || update_price) {
             winners.push_back(record);
             winning_keys.insert(key);
         } else {
             result.dropped++;
         }
     }
-    if (winning_keys.empty()) return result;
+    if (winning_keys.empty() && cleanup_keys.empty()) return result;
 
     sqlite3_exec(db_, "BEGIN", nullptr, nullptr, nullptr);
     try {
@@ -640,6 +679,21 @@ Database::MergeResult Database::merge_import(const std::vector<ojson>& records,
                 }
                 remove.step();
             }
+            for (const auto& key : cleanup_keys) {
+                Statement remove(
+                    db_,
+                    ("DELETE FROM record_sources WHERE date=? AND platform=? AND project=?"
+                     " AND model='' AND type=? AND source_file IN (" + placeholders + ")")
+                        .c_str());
+                bind_text(remove.handle, 1, key[0]);
+                bind_text(remove.handle, 2, key[1]);
+                bind_text(remove.handle, 3, key[2]);
+                bind_text(remove.handle, 4, key[4]);
+                for (size_t i = 0; i < old_files.size(); ++i) {
+                    bind_text(remove.handle, 5 + static_cast<int>(i), old_files[i]);
+                }
+                remove.step();
+            }
         }
 
         Statement source(db_, UPSERT_SOURCE_SQL);
@@ -658,6 +712,7 @@ Database::MergeResult Database::merge_import(const std::vector<ojson>& records,
             refresh_aggregate(key);
             if (!source_file.empty()) changed_sources.insert(source_file);
         }
+        for (const auto& key : cleanup_keys) refresh_aggregate(key);
         for (const std::string& source_file : changed_sources) {
             mark_source(source_file, false);
         }

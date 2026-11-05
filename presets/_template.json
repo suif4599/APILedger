@@ -39,6 +39,9 @@
       "group_type": 1,
       "group_tokens": 2
     },
+    "fallback": {
+      "model": ["name"]
+    },
     "date_format": {
       "field": "bill_start",
       "from": "yyyyMMdd"

@@ -41,7 +41,8 @@ if (scriptStart < 0) {
 }
 const scriptBody = html.slice(scriptStart, html.lastIndexOf('</script>')).trim();
 
-const CHART_IDS = ['chart-trend', 'chart-model', 'chart-stack', 'chart-price'];
+const CHART_IDS = ['chart-trend', 'chart-model', 'chart-stack'];
+const priceChartIds = env => Object.keys(env.options).filter(id => id.startsWith('chart-price'));
 
 // ═══════════════════════════════════════════
 // 最小 DOM / ECharts 桩件
@@ -59,6 +60,7 @@ function makeEnv() {
     options: [{ value: '' }],
     classList: { toggle() {}, add() {}, remove() {} },
     appendChild(child) { if (child && 'value' in child) this.options.push(child); },
+    append(...children) { for (const child of children) this.appendChild(child); },
     addEventListener() {},
     remove(index) { if (typeof index === 'number') this.options.splice(index, 1); },
   });
@@ -128,9 +130,11 @@ api.renderCharts();
 if (!ROWS.length) {
   console.log('     --  报告内无记录, 跳过数据类检查 (只做空态检查)');
 } else {
-  for (const id of CHART_IDS) {
+  const priceIds = priceChartIds(env);
+  for (const id of [...CHART_IDS, ...priceIds]) {
     ok(!!env.options[id], `图表 ${id} 渲染出 option`);
   }
+  ok(priceIds.length > 0, '至少一个均价单位图渲染出 option', priceIds);
 
   // ── 图表不写死画布背景, 直接融入页面/面板 ──
   const lightCfg = env.themes['apiLedgerLight'], darkCfg = env.themes['apiLedgerDark'];
@@ -146,70 +150,76 @@ if (!ROWS.length) {
   ok(lightLabels.length > 0 && lightLabels.every(c => c === PALETTE.light.label),
      '浅色下数值标注沿用默认色 (加暗色不该改动浅色观感)', [`实际: ${lightLabels.join(', ')}`]);
 
-  // ── 均价曲线: 每个点必须是当日该模型原始单价的加权平均 ──
-  const priceOpt = env.options['chart-price'];
-  if (!priceOpt) {
+  // ── 均价曲线: 每个点必须是当日该 usage 原始单价在该单位下的加权平均 ──
+  if (!priceIds.length) {
     ok(false, '均价曲线未渲染, 无法校验');
   } else {
-    // 序列名可能是 "模型" 或 "平台 · 模型" (同模型跨平台时拆线)
-    const rawRows = (name, date) => {
-      const sep = name.indexOf(' · ');
+    const unitKey = value => value >= 0.01 ? 'M' : (value * 1000 >= 0.01 ? 'K' : '1');
+    const unitOfId = id => id.endsWith('-K') ? 'K' : (id.endsWith('-1') ? '1' : 'M');
+    // 序列名可能是 "usage" 或 "平台 / usage" (同 usage 跨平台时拆线)
+    const rawRows = (name, date, unit) => {
+      const sep = name.indexOf(' / ');
       const pf = sep < 0 ? null : name.slice(0, sep);
       const mdl = sep < 0 ? name : name.slice(sep + 3);
       return ROWS.filter(r =>
         String(r.bill_start).slice(0, 10) === date &&
         (r.model || '(空)') === mdl &&
         (!pf || (r.platform || '') === pf) &&
-        Number(r.unit_price) > 0);
+        Number(r.unit_price) > 0 &&
+        unitKey(Number(r.unit_price)) === unit);
     };
     const bad = [];
     let points = 0;
-    priceOpt.series.forEach(s => {
-      s.data.forEach((v, i) => {
-        if (v == null) return;
-        points++;
-        const date = priceOpt.xAxis.data[i];
-        const rows = rawRows(s.name, date);
-        if (!rows.length) { bad.push(`${s.name} ${date}: 找不到对应原始记录`); return; }
-        const prices = rows.map(r => Number(r.unit_price));
-        const lo = Math.min(...prices), hi = Math.max(...prices);
-        if (!Number.isFinite(v) || v <= 0 || v < lo - 1e-9 || v > hi + 1e-9) {
-          bad.push(`${s.name} ${date}: 均价 ${v} 超出原始单价 [${lo.toFixed(4)}, ${hi.toFixed(4)}]`);
-        }
-      });
-    });
-    ok(bad.length === 0, `均价曲线 ${points} 个点均落在当日原始单价范围内`, bad);
-
-    // ── tooltip 的类型占比: 合计 100.00%, 保留 2 位小数 ──
-    const tip = priceOpt.tooltip.formatter;
-    const shareBad = [];
     let tipRows = 0;
-    for (let i = 0; i < priceOpt.xAxis.data.length; i++) {
-      const date = priceOpt.xAxis.data[i];
-      const params = priceOpt.series
-        .map(s => ({ axisValue: date, seriesName: s.name, marker: '●', value: s.data[i] }))
-        .filter(p => p.value != null);
-      if (!params.length) continue;
-      for (const line of tip(params).split('<br>').filter(l => l.includes('%'))) {
-        tipRows++;
-        const pcts = [...line.matchAll(/([\d.]+)%/g)].map(m => m[1]);
-        const sum = pcts.reduce((a, p) => a + Number(p), 0);
-        const twoDecimals = pcts.every(p => (p.split('.')[1] || '').length === 2);
-        if (!twoDecimals || Math.abs(sum - 100) > 0.02) {
-          shareBad.push(`${date}: 合计 ${sum.toFixed(2)}% | ${line.replace(/<[^>]+>/g, '')}`);
+    const shareBad = [];
+    for (const id of priceIds) {
+      const opt = env.options[id];
+      const unit = unitOfId(id);
+      opt.series.forEach(s => {
+        s.data.forEach((v, i) => {
+          if (v == null) return;
+          points++;
+          const date = opt.xAxis.data[i];
+          const rows = rawRows(s.name, date, unit);
+          if (!rows.length) { bad.push(`${id} ${s.name} ${date}: 找不到对应原始记录`); return; }
+          const prices = rows.map(r => Number(r.unit_price));
+          const lo = Math.min(...prices), hi = Math.max(...prices);
+          const raw = unit === 'K' ? v / 1000 : v;
+          if (!Number.isFinite(v) || v <= 0 || raw < lo - 1e-9 || raw > hi + 1e-9) {
+            bad.push(`${id} ${s.name} ${date}: 均价 ${v} (raw ${raw}) 超出原始单价 [${lo.toFixed(6)}, ${hi.toFixed(6)}]`);
+          }
+        });
+      });
+
+      const tip = opt.tooltip.formatter;
+      for (let i = 0; i < opt.xAxis.data.length; i++) {
+        const date = opt.xAxis.data[i];
+        const params = opt.series
+          .map(s => ({ axisValue: date, seriesName: s.name, marker: '●', value: s.data[i] }))
+          .filter(p => p.value != null);
+        if (!params.length) continue;
+        for (const line of tip(params).split('<br>').filter(l => l.includes('%'))) {
+          tipRows++;
+          const pcts = [...line.matchAll(/([\d.]+)%/g)].map(m => m[1]);
+          const sum = pcts.reduce((a, p) => a + Number(p), 0);
+          const twoDecimals = pcts.every(p => (p.split('.')[1] || '').length === 2);
+          if (!twoDecimals || Math.abs(sum - 100) > 0.02) {
+            shareBad.push(`${id} ${date}: 合计 ${sum.toFixed(2)}% | ${line.replace(/<[^>]+>/g, '')}`);
+          }
         }
       }
     }
+    ok(bad.length === 0, `均价曲线 ${points} 个点均落在对应单位的原始单价范围内`, bad);
     ok(shareBad.length === 0, `均价 tooltip 类型占比合计 100.00% / 2 位小数 (检查 ${tipRows} 行)`, shareBad);
   }
 
   // ── 各图表 tooltip 文案: 不出现 undefined / NaN ──
   const textBad = [];
-  for (const id of CHART_IDS) {
+  for (const id of [...CHART_IDS, ...priceIds]) {
     const opt = env.options[id];
     if (!opt || !opt.tooltip || typeof opt.tooltip.formatter !== 'function') continue;
     let samples = [];
-    if (id === 'chart-price') {
+    if (id.startsWith('chart-price')) {
       const i = Math.floor(opt.xAxis.data.length / 2);
       samples = [opt.series.map(s => ({ axisValue: opt.xAxis.data[i], seriesName: s.name, marker: '●', value: s.data[i] }))];
     } else if (id === 'chart-stack') {
@@ -260,16 +270,18 @@ const darkRun = {
 if (!darkRun.ROWS.length) {
   console.log('     --  报告内无记录, 跳过暗色检查 (只做空态检查)');
 } else {
+  const darkPriceIds = priceChartIds(darkEnv);
+  const darkIds = [...CHART_IDS, ...darkPriceIds];
   const darkThemed = darkEnv.inits.filter(i => i.theme === 'apiLedgerDark').map(i => i.id);
-  ok(CHART_IDS.every(id => darkThemed.includes(id)),
-     '切到暗色后四个图表都用暗色主题重建 (主题在 init 时绑定, 必须重建实例)',
-     [`未重建: ${CHART_IDS.filter(id => !darkThemed.includes(id)).join(', ') || '无'}`]);
+  ok(darkIds.every(id => darkThemed.includes(id)),
+     '切到暗色后所有图表都用暗色主题重建 (主题在 init 时绑定, 必须重建实例)',
+     [`未重建: ${darkIds.filter(id => !darkThemed.includes(id)).join(', ') || '无'}`]);
   ok(darkEnv.document.documentElement.dataset.theme === 'dark', '主题选择写到 <html data-theme>');
   ok(darkEnv.localStorage.getItem('apiledger-theme') === 'dark', '主题选择被记住 (localStorage)');
   ok(String(darkEnv.getEl('btn-theme').textContent).includes('Light'),
      '主题按钮文案切到"Light" (点击可切回)', [`实际: ${darkEnv.getEl('btn-theme').textContent}`]);
 
-  const dOpt = darkEnv.options['chart-price'];
+  const dOpt = darkEnv.options[darkPriceIds[0]];
   if (!dOpt) {
     ok(false, '暗色下均价曲线未渲染, 无法校验配色');
   } else {
@@ -284,7 +296,7 @@ if (!darkRun.ROWS.length) {
     ok(darkLabels.length > 0 && darkLabels.every(c => c === darkRun.PALETTE.dark.label),
        '暗色下数值标注改用浅色 (默认色压在深底上看不见)', [`实际: ${darkLabels.join(', ')}`]);
     const leaked = [];
-    for (const id of CHART_IDS) {
+    for (const id of darkIds) {
       const json = JSON.stringify(darkEnv.options[id] || {});
       for (const c of LIGHT_ONLY) if (json.includes(c)) leaked.push(`${id}: ${c}`);
     }

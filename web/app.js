@@ -86,8 +86,8 @@ function snapshotBytes() {
   return bytes;
 }
 
-async function persist(force = false) {
-  if (state.cloudOn && !force) return;
+async function persist() {
+  if (state.cloudOn) return;
   const bytes = snapshotBytes();
   if (!bytes) return;
   await writeSaved({ bytes, owner: state.owner, savedAt: Date.now() });
@@ -150,8 +150,10 @@ function showImportResult(result) {
   const files = result.files || [];
   const written = files.reduce((sum, file) => sum + (file.written || 0), 0);
   const dropped = files.reduce((sum, file) => sum + (file.dropped || 0), 0);
+  const currencies = [...new Set(files.map(file => file.currency).filter(Boolean))];
   let status = `${files.length} file(s) · ${written} rows written`;
   if (dropped) status += ` · kept ${dropped} existing row(s)`;
+  if (currencies.length) status += ` · ${currencies.join(' / ')}`;
   $('import-status').textContent = status;
 
   const skipped = result.skipped || [];
@@ -159,7 +161,7 @@ function showImportResult(result) {
   list.textContent = '';
   if (!skipped.length) {
     list.hidden = true;
-    return;
+    return currencies;
   }
   for (const item of skipped) {
     const entry = document.createElement('li');
@@ -171,6 +173,7 @@ function showImportResult(result) {
     list.appendChild(entry);
   }
   list.hidden = false;
+  return currencies;
 }
 
 function wireImport() {
@@ -201,9 +204,10 @@ function wireImport() {
       state.module._free(dataPointer);
 
       if (!result.ok) throw new Error(result.error || 'Import failed.');
-      showImportResult(result);
+      const currencies = showImportResult(result);
       await persist();
       renderReport(false);
+      if (currencies.length) window.APILedgerReport.setCurrency(currencies[0]);
       await syncIfEnabled();
     } catch (error) {
       showError(error instanceof Error ? error.message : String(error));
@@ -303,27 +307,49 @@ async function syncNow() {
   setCloudStatus('Syncing…');
 
   try {
+    await clearSaved();
     const dirty = parsePointer(state.module._apiledger_export_dirty());
+    const sent = [];
     let merged = null;
     for (const sources of chunkSources(dirty.sources || [])) {
+      sent.push(...sources);
       const response = await fetch('api/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'fetch' },
         body: JSON.stringify({ sources }),
       });
-      if (!response.ok) throw new Error(`sync failed (${response.status})`);
+      if (!response.ok) {
+        let detail = '';
+        try {
+          const data = await response.json();
+          detail = data && data.error ? `: ${data.error}` : '';
+        } catch (parseError) {
+          detail = '';
+        }
+        throw new Error(`sync failed (${response.status})${detail}`);
+      }
       merged = await response.json();
       if (!merged.ok) throw new Error(merged.error || 'sync failed');
     }
     if (!merged) throw new Error('sync failed');
 
+    const returned = new Map((merged.sources || []).map(source => [source.source_file, source.updated_at]));
+    const rejected = sent.filter(source => {
+      const timestamp = returned.get(source.source_file);
+      return timestamp === undefined || timestamp < source.updated_at;
+    });
+    if (rejected.length) {
+      throw new Error(`sync did not confirm ${rejected.length} source(s)`);
+    }
+
     await applyServerState(JSON.stringify(merged));
     state.owner = state.user.username;
-    await clearSaved();
     renderReport(false);
     setCloudStatus('Cloud sync on — history is stored only in the cloud.');
   } catch (error) {
-    setCloudStatus('Cloud sync failed — it will retry after the next change.');
+    const message = error instanceof Error ? error.message : String(error);
+    console.error('ledger sync failed', error);
+    setCloudStatus(`Cloud sync failed — ${message}`);
   } finally {
     state.syncing = false;
     $('import').disabled = false;
@@ -360,7 +386,7 @@ async function initCloud() {
     if (state.cloudOn) {
       await syncNow();
     } else {
-      await persist(true);
+      await persist();
       setCloudStatus('History is stored in this browser only.');
     }
   });
@@ -392,9 +418,12 @@ async function boot() {
     renderReport(true);
     wireImport();
     wireDelete();
-    $('import').disabled = false;
-    $('delete-range').disabled = false;
-    await initCloud();
+    try {
+      await initCloud();
+    } finally {
+      $('import').disabled = false;
+      $('delete-range').disabled = false;
+    }
   } catch (error) {
     showError(error instanceof Error ? error.message : String(error));
   }
